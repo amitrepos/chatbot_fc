@@ -1,8 +1,12 @@
 # FlexCube AI Assistant - Implementation Status
 
-## ✅ Completed Phases
+**Last Updated:** 2025-12-13 23:20
 
-### Phase 1: Infrastructure Setup ✅
+---
+
+## ✅ COMPLETED
+
+### Phase 1: Infrastructure Setup ✅ COMPLETE
 - ✅ Docker and Docker Compose installed
 - ✅ Ollama installed and running
 - ✅ Mistral 7B Q4 model downloaded
@@ -11,7 +15,7 @@
 - ✅ Docker network created (flexcube-net)
 - ✅ All services verified and working
 
-### Phase 2: RAG Pipeline ✅
+### Phase 2: RAG Pipeline ✅ COMPLETE
 - ✅ LlamaIndex setup complete
 - ✅ BGE-large embeddings configured
 - ✅ Document loaders (PDF, DOCX, TXT)
@@ -19,148 +23,135 @@
 - ✅ Qdrant vector store integration
 - ✅ Query engine with Mistral integration
 - ✅ Source citation working
-- ✅ Tested with 6MB PDF (662 chunks indexed)
+- ✅ Tested with multiple PDFs (1780+ chunks indexed)
+- ✅ **Two-tier query flow: RAG first, then general knowledge fallback**
 
-### Phase 3: API Layer ✅ (Partially)
+### Phase 3: API Layer ✅ MOSTLY COMPLETE
 - ✅ FastAPI application created
-- ✅ Health check endpoint
+- ✅ Health check endpoint (`GET /health`)
 - ✅ CORS configuration
-- ✅ POST /api/query - text questions ✅
-- ✅ GET /api/documents - list documents ✅
-- ✅ POST /api/documents/upload - upload documents ✅
-- ✅ Simple web interface for testing ✅
-- ❌ POST /api/query/image - screenshot questions (NOT YET)
-- ❌ DELETE /api/documents/{id} - remove documents (NOT YET)
-- ❌ POST /api/documents/reindex - rebuild index (NOT YET)
+- ✅ Text query endpoint (`POST /api/query`)
+- ✅ List documents endpoint (`GET /api/documents`)
+- ✅ Upload documents endpoint (`POST /api/documents/upload`)
+- ✅ Delete documents endpoint (`DELETE /api/documents/{filename}`)
+- ✅ Image query endpoint placeholder (`POST /api/query/image`) - UI ready, backend placeholder
+- ❌ Reindex endpoint (`POST /api/documents/reindex`) - NOT YET
+
+### Phase 4: User Interface ✅ COMPLETE (Custom UI)
+- ✅ Modern tabbed interface (Text Query / Image Query / Documents)
+- ✅ Responsive design (mobile-friendly)
+- ✅ Conversation history with localStorage
+- ✅ Document upload with progress indicator
+- ✅ Document management (list, delete)
+- ✅ Image upload UI with drag & drop and preview
+- ✅ Smart source attribution (RAG sources vs "AI Model - General Knowledge")
+- ✅ Time estimates for processing
+- ❌ Open WebUI integration - SKIPPED (custom UI is sufficient)
 
 ---
 
-## 🚧 Next Steps (In Priority Order)
+### Phase 5: Vision Support ✅ COMPLETE
+- ✅ LLaVA vision wrapper created (`src/rag/vision.py`)
+- ✅ Image preprocessing and base64 encoding
+- ✅ Extraction prompts for FlexCube screenshots
+- ✅ Extracts: error codes, error messages, screen names
+- ✅ Connected to RAG pipeline
+- ✅ `POST /api/query/image` endpoint fully implemented
 
-### Priority 1: Complete Phase 3 - Missing API Endpoints
-**Status:** Critical for full functionality
+---
 
-1. **POST /api/query/image** - Screenshot query endpoint
-   - Accept image uploads
-   - Process with LLaVA to extract error info
-   - Feed to RAG pipeline
-   - Return solution
+## 🚧 PENDING
 
-2. **POST /api/documents/reindex** - Rebuild index
-   - Clear existing index
-   - Re-index all documents
-   - Useful after adding new documents
+### Phase 6: Production Hardening
+**Status:** Not started
+**Priority:** MEDIUM - For production deployment
 
-3. **DELETE /api/documents/{id}** - Remove documents
-   - Remove specific document from index
-   - Clean up vector store
-
-### Priority 2: Phase 5 - Vision Support (Critical Feature)
-**Status:** Required per PROJECT_SPEC.md (screenshot support)
-
-1. **Vision Pipeline Setup**
-   - Test LLaVA with FlexCube screenshots
-   - Build image preprocessing
-   - Create extraction prompts for:
-     - Screen name
-     - Error code
-     - Error message
-     - Context information
-
-2. **Integration with RAG**
-   - Connect LLaVA output to RAG pipeline
-   - Handle mixed text+image queries
-   - Implement POST /api/query/image endpoint
-
-### Priority 3: Phase 4 - User Interface
-**Status:** Optional (we have basic web UI, but Open WebUI is better)
-
-1. **Open WebUI Setup**
-   - Deploy Open WebUI via Docker
-   - Connect to Ollama
-   - Configure for local-only access
-
-2. **Customization**
-   - Add FlexCube branding (optional)
-   - Configure system prompts
-   - Enable file upload for screenshots
-
-### Priority 4: Phase 6 - Production Hardening
-**Status:** For production deployment
-
+**Tasks:**
 1. **Nginx Setup**
    - Configure reverse proxy
    - Set up SSL with Let's Encrypt
    - Add rate limiting
 
 2. **Security**
-   - Disable root SSH (create deploy user)
+   - Create deploy user (disable root SSH)
    - Configure firewall rules
    - Set up fail2ban
 
 3. **Monitoring**
-   - Add basic health monitoring
-   - Set up log aggregation
-   - Configure alerts
+   - Health monitoring
+   - Log aggregation
+   - Alerts configuration
+
+### Minor Pending Items
+- `POST /api/documents/reindex` - Rebuild entire index
+- Auto-restart on server reboot (systemd service)
+- Backup strategy for Qdrant data
 
 ---
 
-## Current Capabilities
+## 📊 Current Capabilities
 
-✅ **Working Now:**
-- Text-based queries via web interface
-- Document upload and indexing
-- RAG-based answers with source citation
-- 662 chunks indexed from PDF and text files
-- Web interface at http://65.109.226.36:8000
+### ✅ Working Now
+| Feature | Status | Details |
+|---------|--------|---------|
+| Text Queries | ✅ Working | Ask questions, get answers from RAG or general knowledge |
+| Document Upload | ✅ Working | PDF, DOCX, TXT support |
+| Document Management | ✅ Working | List, upload, delete documents |
+| Source Citation | ✅ Working | Shows document sources for RAG answers |
+| General Knowledge | ✅ Working | Falls back to model knowledge for non-FlexCube questions |
+| Conversation History | ✅ Working | Stored in browser localStorage |
+| Mobile-Friendly UI | ✅ Working | Responsive design |
 
-❌ **Not Yet Available:**
-- Screenshot/image query support
-- Document deletion
-- Index rebuilding via API
-- Production-grade security (SSL, Nginx)
-- Advanced monitoring
-
----
-
-## Recommended Next Steps
-
-Based on PROJECT_SPEC.md requirements, the **most critical missing feature** is:
-
-### **Screenshot Support (Phase 5)**
-This is explicitly mentioned in the project spec:
-- "Users often screenshot errors rather than typing them"
-- "Accepts screenshots of FlexCube errors"
-
-**Suggested Implementation Order:**
-1. Complete Phase 3 missing endpoints (reindex, delete)
-2. **Implement Phase 5: Vision Support** (screenshot queries)
-3. Enhance Phase 4: Better UI (Open WebUI)
-4. Phase 6: Production hardening
+### ❌ Not Yet Available
+| Feature | Status | Details |
+|---------|--------|---------|
+| Screenshot Queries | ❌ Pending | UI ready, backend needs LLaVA integration |
+| SSL/HTTPS | ❌ Pending | Requires Nginx setup |
+| Auto-Restart | ❌ Pending | Needs systemd service |
 
 ---
 
-## Quick Start Commands
+## 🎯 Recommended Next Steps
+
+### Option 1: Implement Vision Support (Phase 5)
+**Why:** Critical feature per PROJECT_SPEC.md - users often screenshot errors
+**Effort:** Medium (2-4 hours)
+**Impact:** HIGH - Enables screenshot-based queries
+
+### Option 2: Production Hardening (Phase 6)
+**Why:** Secure the application for production use
+**Effort:** Medium (2-3 hours)
+**Impact:** MEDIUM - Security and reliability
+
+### Option 3: Add Reindex Endpoint
+**Why:** Allow full re-indexing without restart
+**Effort:** Low (30 mins)
+**Impact:** LOW - Convenience feature
+
+---
+
+## 🚀 Quick Start
 
 **Start API Server:**
 ```bash
 cd /var/www/chatbot_FC
-./start_api.sh
+source venv/bin/activate
+nohup python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 > api.log 2>&1 &
 ```
 
 **Access Web Interface:**
 - http://65.109.226.36:8000
 
-**Upload Document:**
+**Check Health:**
 ```bash
-curl -X POST "http://65.109.226.36:8000/api/documents/upload" \
-  -F "file=@document.pdf"
+curl http://localhost:8000/health
 ```
 
-**Query:**
-```bash
-curl -X POST "http://65.109.226.36:8000/api/query" \
-  -H "Content-Type: application/json" \
-  -d '{"question": "Your question here"}'
-```
+---
 
+## 📈 Statistics
+
+- **Documents Indexed:** 3 files (OracleFlexcubeManual.pdf, FGL.pdf, sample_flexcube.txt)
+- **Total Chunks:** 1780+
+- **Models:** Mistral 7B (text), LLaVA 7B (vision - ready)
+- **Vector Dimension:** 1024 (BGE-large)

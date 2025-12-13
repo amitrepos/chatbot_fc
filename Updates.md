@@ -1,5 +1,114 @@
 # Updates Log
 
+## 2025-12-14 - Clipboard Paste Support for Image Query
+
+**Timestamp:** 2025-12-14
+
+**Action:** Added clipboard paste functionality to Image Query section
+
+**Changes:**
+1. **UI Updates:**
+   - Updated image upload area text to mention paste support: "Click, drag & drop, or paste image here"
+   - Added visual tip: "💡 Tip: Press Ctrl+V (or Cmd+V on Mac) to paste from clipboard"
+
+2. **JavaScript Functionality:**
+   - Added `setupClipboardPaste()` function that listens for paste events
+   - Only processes paste when Image Query tab is active (doesn't interfere with text input)
+   - Detects image data in clipboard using Clipboard API
+   - Converts clipboard image blob to File object with timestamp-based filename
+   - Reuses existing `handleImageFile()` function for validation and preview
+   - Provides visual feedback (brief green highlight) when image is pasted
+
+3. **Technical Details:**
+   - Uses `document.addEventListener('paste')` to detect clipboard paste events
+   - Checks if image tab is active before processing
+   - Extracts image from `e.clipboardData.items`
+   - Validates image type and size using existing validation logic
+   - Works seamlessly with existing drag & drop and file picker methods
+
+**User Experience:**
+- Users can now paste screenshots directly from clipboard into Image Query tab
+- No need to save screenshot to file first
+- Works with screenshots copied from any source (Snipping Tool, screenshots, etc.)
+- Visual feedback confirms successful paste
+
+## 2025-12-13 23:25 - Enhanced Document Management UI
+
+**Timestamp:** 2025-12-13 23:25:00
+
+**Action:** Improved Documents tab with upload, reindex controls
+
+**Features:**
+1. **Document Upload (Automatic Indexing):**
+   - Drag & drop support for documents
+   - Multiple file upload
+   - Supports PDF, DOCX, TXT (up to 50MB)
+   - Progress indicator during upload
+   - **NEW: Documents are auto-indexed immediately** - no need to reindex!
+
+2. **Index Management:**
+   - "Rebuild Index (after deletions)" button - only needed after deleting docs
+   - Progress bar during rebuilding
+   - Status messages (success/error)
+   - Total chunks display
+
+3. **Document List:**
+   - Shows all uploaded documents
+   - File size display
+   - Delete button per document
+   - Refresh list button
+
+4. **New API Endpoint:**
+   - `POST /api/documents/reindex` - Rebuilds entire search index (only for cleanup after deletions)
+
+**Workflow:**
+1. Upload document(s) via drag & drop or click → **Automatically indexed!**
+2. Query immediately using Text or Image tabs
+3. Only use "Rebuild Index" after deleting documents
+
+**Dependencies Added:**
+- `docx2txt` - For DOCX file support
+
+## 2025-12-13 23:15 - Phase 5: Vision Support (Screenshot Queries)
+
+**Timestamp:** 2025-12-13 23:15:00
+
+**Action:** Implemented LLaVA vision model integration for screenshot analysis
+
+**New Files:**
+- `src/rag/vision.py` - FlexCubeVision class for LLaVA integration
+
+**Features:**
+1. **Screenshot Analysis with LLaVA:**
+   - Accepts PNG, JPG images
+   - Extracts: error code, error message, screen name, description
+   - Creates optimized RAG query from extracted info
+
+2. **Vision Pipeline Flow:**
+   ```
+   Screenshot → LLaVA Analysis → Extract Info → Create Query → RAG Search → Answer
+   ```
+
+3. **Extraction Prompt:**
+   - Specialized prompt for FlexCube errors
+   - Looks for error codes (ERR_XXX, ORA-XXXXX)
+   - Identifies screen/module names
+   - Creates suggested search queries
+
+4. **API Endpoint:**
+   - POST /api/query/image (fully implemented)
+   - Returns extraction summary + RAG solution
+   - Shows sources from documentation
+
+**Example Response:**
+```json
+{
+    "answer": "**Extracted from Screenshot:**\n- **Error Code:** ERR_ACC_001\n- **Screen:** Customer Maintenance\n\n**Solution:**\n...",
+    "sources": ["OracleFlexcubeManual.pdf"],
+    "processing_time": 20.37
+}
+```
+
 ## 2025-12-13 23:20 - Fallback to General Knowledge for Non-RAG Questions
 
 **Timestamp:** 2025-12-13 23:20:00
