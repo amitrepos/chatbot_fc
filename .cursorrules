@@ -1,0 +1,61 @@
+# FlexCube AI Assistant - Cursor Rules
+
+## Project Context
+You are helping build a RAG-based AI assistant for FlexCube banking software support.
+The application runs on a Hetzner cloud server (16 vCPU, 32GB RAM, Rocky Linux, no GPU).
+Everything must run locally - no external API calls to OpenAI, Anthropic, etc.
+
+## Tech Stack (Do Not Change Without Discussion)
+- LLM Runtime: Ollama
+- Text Model: Mistral 7B Q4
+- Vision Model: LLaVA 7B Q4
+- Embeddings: BGE-large-en-v1.5
+- Vector Database: Qdrant
+- RAG Framework: LlamaIndex
+- API Layer: FastAPI
+- User Interface: Open WebUI (Phase 1), Custom Gradio (if needed)
+- Reverse Proxy: Nginx
+- Containerization: Docker + Docker Compose
+- SSL: Let's Encrypt
+
+## Server Details
+- IP: 65.109.226.36
+- OS: Rocky Linux
+- RAM: 32GB
+- vCPU: 16
+- Disk: 360GB
+- No GPU - CPU inference only
+
+## Implementation Phases
+Phase 1: Infrastructure (Docker, Ollama, Qdrant)
+Phase 2: RAG Pipeline (LlamaIndex, embeddings, retrieval)
+Phase 3: API Layer (FastAPI endpoints)
+Phase 4: User Interface (Open WebUI integration)
+Phase 5: Vision Support (LLaVA for screenshots)
+Phase 6: Production Hardening (Nginx, SSL, monitoring)
+
+## Coding Guidelines
+- Use Python 3.11+
+- Use async/await for API endpoints
+- Add comprehensive error handling
+- Include logging for debugging
+- Write clear comments explaining FlexCube-specific logic
+- Create modular, testable components
+- Use environment variables for configuration
+- Never hardcode secrets or API keys
+
+## When Suggesting Solutions
+- Prefer simple solutions over complex ones
+- Consider 32GB RAM constraint when suggesting models or batch sizes
+- Remember there is no GPU - all inference is CPU-based
+- Test commands should work on Rocky Linux (RHEL-based)
+- Use Docker for all services for clean deployment
+
+## File Organization
+- Docker configs go in /docker
+- Application code goes in /src
+- FlexCube documents go in /data/documents
+- Documentation goes in /docs
+
+## Current Phase
+Starting with Phase 1 - Infrastructure Setup

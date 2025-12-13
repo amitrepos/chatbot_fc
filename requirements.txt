@@ -1,0 +1,33 @@
+# FlexCube AI Assistant - Python Dependencies
+# Python 3.11+ required
+
+# Core RAG Framework
+llama-index>=0.10.0
+llama-index-vector-stores-qdrant>=0.1.0
+llama-index-embeddings-huggingface>=0.1.0
+
+# Document Processing
+pypdf2==3.0.1
+python-docx==1.1.0
+
+# Embeddings Model
+sentence-transformers==2.2.2
+torch==2.1.0
+transformers==4.35.0
+
+# API Framework (for Phase 3, but including now)
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+
+# HTTP Client for Ollama
+httpx==0.25.0
+requests==2.31.0
+
+# Utilities
+python-dotenv==1.0.0
+loguru==0.7.2
+
+# Qdrant Client
+qdrant-client>=1.7.1
+
