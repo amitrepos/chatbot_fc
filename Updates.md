@@ -1,5 +1,78 @@
 # Updates Log
 
+## 2025-12-13 23:20 - Fallback to General Knowledge for Non-RAG Questions
+
+**Timestamp:** 2025-12-13 23:20:00
+
+**Action:** Implemented two-tier query flow: RAG first, then general knowledge fallback
+
+**New Flow:**
+1. User asks a question
+2. System retrieves relevant chunks from RAG (FlexCube documents)
+3. LLM tries to answer using RAG context
+4. **If LLM says context is irrelevant AND question is NOT FlexCube-related:**
+   - Make a second LLM call WITHOUT RAG context
+   - LLM answers from its general knowledge
+   - Source shows "AI Model (General Knowledge)"
+5. **If question IS FlexCube-related:**
+   - Use RAG answer
+   - Show document sources
+
+**Example Results:**
+- "What is the capital of Germany?" → "Berlin..." (Source: AI Model)
+- "What is Microfinance Account Processing?" → RAG answer (Source: OracleFlexcubeManual.pdf)
+
+**Technical Changes:**
+- Added second LLM call path in `query_engine.py`
+- Direct LLM completion with general knowledge prompt
+- Preserved RAG flow for FlexCube-related questions
+
+## 2025-12-13 23:10 - Improved Source Attribution (AI Model vs RAG)
+
+**Timestamp:** 2025-12-13 23:10:00
+
+**Action:** Improved source attribution to distinguish between AI model knowledge and RAG sources
+
+**Changes:**
+1. **LLM Irrelevance Detection:** Added detection for phrases like:
+   - "doesn't pertain", "not related to", "no information regarding"
+   - "context doesn't", "provided context", "not relevant to"
+   - "sorry for any confusion", "outside the scope"
+   
+2. **Source Clearing Logic:** 
+   - If LLM explicitly says context was not useful → clear sources
+   - If question is general (not FlexCube-related) → clear sources
+
+3. **UI Update:**
+   - When sources are empty → Show "AI Model (General Knowledge)" with blue styling
+   - When sources have files → Show file names with green styling
+   - Makes it clear where the answer came from
+
+**Result:**
+- FlexCube questions → Shows document sources (e.g., OracleFlexcubeManual.pdf)
+- General questions → Shows "AI Model (General Knowledge)"
+
+## 2025-12-13 23:00 - Fix Source Clearing for General Questions
+
+**Timestamp:** 2025-12-13 23:00:00
+
+**Action:** Fixed issue where sources were shown for general questions unrelated to FlexCube
+
+**Changes:**
+1. **Source List Initialization:** Sources list is now explicitly initialized as empty at the start of each query
+2. **Relevance Checking:** Added similarity score checking (> 0.3 threshold) to determine if retrieved nodes are relevant
+3. **FlexCube Keyword Detection:** Added logic to detect if question/answer is FlexCube-related using keywords
+4. **Conditional Source Display:** Sources are only shown if:
+   - Retrieved nodes have good relevance scores (> 0.3), OR
+   - Question/answer contains FlexCube-related keywords
+5. **Source Clearing:** General questions that don't match FlexCube content will return empty sources list
+
+**Technical Details:**
+- Sources list is cleared at the start of each `query()` call
+- Similarity scores from vector retrieval are checked before extracting sources
+- FlexCube keywords: flexcube, oracle, banking, account, transaction, loan, deposit, customer, error, module, screen
+- If question is general and not FlexCube-related, sources are cleared even if retrieved
+
 ## 2025-12-13 22:50 - Restore Time Estimates
 
 **Timestamp:** 2025-12-13 22:50:00

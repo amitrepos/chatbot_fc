@@ -98,47 +98,152 @@ class FlexCubeQueryEngine:
         logger.info(f"Processing query: {question[:100]}...")
         
         try:
-            # First, retrieve nodes to get sources BEFORE querying
-            # This ensures we always have source information
-            retrieved_nodes = self.retriever.retrieve(question)
+            # Initialize sources list fresh for each query
             sources = []
             seen_sources = set()
             
-            # Extract sources from retrieved nodes
-            for node in retrieved_nodes:
-                source = None
-                
-                # Try to get source from node metadata
-                # LlamaIndex stores file info in 'file_name' or 'source' fields
-                if hasattr(node, 'metadata') and node.metadata:
-                    source = (node.metadata.get('file_name', None) or 
-                             node.metadata.get('source', None) or 
-                             node.metadata.get('file_path', None))
-                elif hasattr(node, 'node') and hasattr(node.node, 'metadata'):
-                    source = (node.node.metadata.get('file_name', None) or
-                             node.node.metadata.get('source', None) or
-                             node.node.metadata.get('file_path', None))
-                
-                # Add source if found and not duplicate
-                if source and source not in seen_sources:
-                    # Extract just filename for cleaner display
-                    if '/' in source:
-                        filename = source.split('/')[-1]
-                        sources.append(filename)
+            # First, retrieve nodes to get sources BEFORE querying
+            # This ensures we always have source information
+            retrieved_nodes = self.retriever.retrieve(question)
+            
+            # Check if we have retrieved nodes with sufficient relevance
+            # Only extract sources if nodes have reasonable similarity scores
+            has_relevant_sources = False
+            if retrieved_nodes:
+                # Check if nodes have similarity scores (NodeWithScore objects)
+                # If similarity is too low, the question might be too general
+                for node in retrieved_nodes[:3]:  # Check top 3 for relevance
+                    if hasattr(node, 'score') and node.score is not None:
+                        # If similarity score exists and is reasonable (> 0.3), consider it relevant
+                        if node.score > 0.3:
+                            has_relevant_sources = True
+                            break
                     else:
-                        sources.append(source)
-                    seen_sources.add(source)
-                    
-                    # Limit to top 5 sources
-                    if len(sources) >= 5:
+                        # If no score available, assume relevance (legacy behavior)
+                        has_relevant_sources = True
                         break
+            
+            # Only extract sources if we have relevant retrieved nodes
+            if has_relevant_sources and retrieved_nodes:
+                # Extract sources from retrieved nodes
+                for node in retrieved_nodes:
+                    source = None
+                    
+                    # Try to get source from node metadata
+                    # LlamaIndex stores file info in 'file_name' or 'source' fields
+                    if hasattr(node, 'metadata') and node.metadata:
+                        source = (node.metadata.get('file_name', None) or 
+                                 node.metadata.get('source', None) or 
+                                 node.metadata.get('file_path', None))
+                    elif hasattr(node, 'node') and hasattr(node.node, 'metadata'):
+                        source = (node.node.metadata.get('file_name', None) or
+                                 node.node.metadata.get('source', None) or
+                                 node.node.metadata.get('file_path', None))
+                    
+                    # Add source if found and not duplicate
+                    if source and source not in seen_sources:
+                        # Extract just filename for cleaner display
+                        if '/' in source:
+                            filename = source.split('/')[-1]
+                            sources.append(filename)
+                        else:
+                            sources.append(source)
+                        seen_sources.add(source)
+                        
+                        # Limit to top 5 sources
+                        if len(sources) >= 5:
+                            break
             
             # Now query the LLM with the retrieved context
             response = self.query_engine.query(question)
             answer = str(response)
             
+            # Check if answer seems to be from general knowledge vs. documents
+            answer_lower = answer.lower()
+            question_lower = question.lower()
+            
+            # Phrases that indicate the LLM found the context irrelevant
+            # When the LLM says these, it means it answered from general knowledge, not RAG
+            irrelevant_context_phrases = [
+                "doesn't pertain",
+                "does not pertain",
+                "not related to",
+                "no information regarding",
+                "no information about",
+                "context doesn't",
+                "context does not",
+                "provided context",
+                "not relevant to",
+                "isn't relevant",
+                "is not relevant",
+                "sorry for any confusion",
+                "i don't have information",
+                "i cannot find",
+                "not mentioned in",
+                "outside the scope"
+            ]
+            
+            # Check if LLM indicated the context was not useful
+            context_was_irrelevant = any(phrase in answer_lower for phrase in irrelevant_context_phrases)
+            
+            # Keywords that suggest FlexCube-specific content
+            flexcube_keywords = ['flexcube', 'oracle', 'banking', 'account', 'transaction', 
+                               'loan', 'deposit', 'customer', 'error', 'module', 'screen',
+                               'microfinance', 'ledger', 'gl', 'branch']
+            
+            # Check if question mentions FlexCube-related terms (check question only, not answer)
+            is_flexcube_related = any(keyword in question_lower for keyword in flexcube_keywords)
+            
+            # If RAG context was irrelevant and question is NOT FlexCube-related,
+            # make a second call to the LLM to answer from general knowledge
+            if context_was_irrelevant and not is_flexcube_related:
+                logger.info("RAG context irrelevant for general question - asking LLM to answer from general knowledge")
+                
+                # Create a prompt that asks the LLM to answer from its own knowledge
+                general_knowledge_prompt = f"""You are a helpful AI assistant. Answer the following question from your general knowledge.
+
+Question: {question}
+
+Please provide a helpful and accurate answer."""
+                
+                # Call LLM directly without RAG context
+                general_response = self.llm.complete(general_knowledge_prompt)
+                answer = str(general_response.text).strip()
+                
+                # Clear sources - this is from model's general knowledge
+                sources = []
+                seen_sources = set()
+                logger.info("Answered from general knowledge - no document sources")
+            
+            elif context_was_irrelevant and is_flexcube_related:
+                # FlexCube question but context wasn't helpful - keep RAG answer but clear sources
+                sources = []
+                seen_sources = set()
+                logger.info("FlexCube question but RAG context unhelpful - clearing sources")
+            
+            elif not is_flexcube_related and not has_relevant_sources:
+                # General question with low relevance - fall back to general knowledge
+                logger.info("General question with low relevance - asking LLM for general knowledge answer")
+                
+                general_knowledge_prompt = f"""You are a helpful AI assistant. Answer the following question from your general knowledge.
+
+Question: {question}
+
+Please provide a helpful and accurate answer."""
+                
+                general_response = self.llm.complete(general_knowledge_prompt)
+                answer = str(general_response.text).strip()
+                
+                sources = []
+                seen_sources = set()
+                logger.info("Answered from general knowledge - no document sources")
+            
             # Also try to get sources from response object (as backup)
-            if not sources:
+            # Only if:
+            # 1. We don't have sources yet AND
+            # 2. Question is FlexCube-related AND
+            # 3. Context was NOT marked as irrelevant (don't re-add sources if LLM said they weren't useful)
+            if not sources and is_flexcube_related and not context_was_irrelevant:
                 source_nodes = None
                 
                 # Method 1: Direct source_nodes attribute

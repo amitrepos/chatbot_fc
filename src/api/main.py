@@ -620,7 +620,7 @@ async def root():
                             });
                             html += '</ul>';
                         } else {
-                            html += '<p style="color: #95a5a6; font-style: italic;">No specific sources identified.</p>';
+                            html += '<li><code style="background-color: #e3f2fd; color: #1565c0;">AI Model (General Knowledge)</code></li>';
                         }
                         html += '</div></div>';
                         answerDiv.innerHTML = html;
@@ -741,7 +741,7 @@ async def root():
                             });
                             html += '</ul>';
                         } else {
-                            html += '<p style="color: #95a5a6; font-style: italic;">No specific sources identified.</p>';
+                            html += '<li><code style="background-color: #e3f2fd; color: #1565c0;">AI Model (General Knowledge)</code></li>';
                         }
                         html += '</div>';
                         if (item.processing_time) {
@@ -808,7 +808,7 @@ async def root():
                             });
                             html += '</ul>';
                         } else {
-                            html += '<p style="color: #95a5a6; font-style: italic;">No specific sources identified.</p>';
+                            html += '<li><code style="background-color: #e3f2fd; color: #1565c0;">AI Model (General Knowledge)</code></li>';
                         }
                         html += '</div></div>';
                         answerDiv.innerHTML = html;
