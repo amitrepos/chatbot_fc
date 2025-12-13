@@ -600,7 +600,7 @@ async def root():
                 const askBtn = document.getElementById('askImageBtn');
                 askBtn.disabled = true;
                 askBtn.textContent = 'Processing...';
-                answerDiv.innerHTML = '<div class="loading">Analyzing image and searching for solutions</div>';
+                answerDiv.innerHTML = '<div class="loading">Analyzing image and searching for solutions... This may take 30-120 seconds</div>';
                 
                 try {
                     const formData = new FormData();
@@ -790,7 +790,7 @@ async def root():
                 }
                 askBtn.disabled = true;
                 askBtn.textContent = 'Processing...';
-                answerDiv.innerHTML = '<div class="loading">Processing your question</div>';
+                answerDiv.innerHTML = '<div class="loading">Processing your question... This may take 20-90 seconds</div>';
                 try {
                     const response = await fetch('/api/query', {
                         method: 'POST',

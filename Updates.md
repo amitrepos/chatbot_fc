@@ -1,5 +1,17 @@
 # Updates Log
 
+## 2025-12-13 22:50 - Restore Time Estimates
+
+**Timestamp:** 2025-12-13 22:50:00
+
+**Action:** Restored time estimate messages in loading states
+
+**Changes:**
+- Text Query: "Processing your question... This may take 20-90 seconds"
+- Image Query: "Analyzing image and searching for solutions... This may take 30-120 seconds"
+
+**Reason:** Users need to know approximate processing time to manage expectations.
+
 ## 2025-12-13 22:45 - Major UI Enhancements
 
 **Timestamp:** 2025-12-13 22:45:00
