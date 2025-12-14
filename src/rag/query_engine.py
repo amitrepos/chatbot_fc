@@ -106,24 +106,32 @@ class FlexCubeQueryEngine:
             # This ensures we always have source information
             retrieved_nodes = self.retriever.retrieve(question)
             
+            # Keywords that suggest FlexCube-specific content (check early)
+            question_lower = question.lower()
+            flexcube_keywords = ['flexcube', 'oracle', 'banking', 'account', 'transaction', 
+                               'loan', 'deposit', 'customer', 'error', 'module', 'screen',
+                               'microfinance', 'ledger', 'gl', 'branch', 'payment', 'schedule',
+                               'processing', 'rollover', 'delinquency', 'status', 'simulation']
+            is_flexcube_related = any(keyword in question_lower for keyword in flexcube_keywords)
+            
             # Check if we have retrieved nodes with sufficient relevance
-            # Only extract sources if nodes have reasonable similarity scores
             has_relevant_sources = False
             if retrieved_nodes:
-                # Check if nodes have similarity scores (NodeWithScore objects)
-                # If similarity is too low, the question might be too general
-                for node in retrieved_nodes[:3]:  # Check top 3 for relevance
-                    if hasattr(node, 'score') and node.score is not None:
-                        # If similarity score exists and is reasonable (> 0.3), consider it relevant
-                        if node.score > 0.3:
+                # For FlexCube questions, always consider sources relevant
+                if is_flexcube_related:
+                    has_relevant_sources = True
+                else:
+                    # For general questions, check similarity scores
+                    for node in retrieved_nodes[:3]:
+                        if hasattr(node, 'score') and node.score is not None:
+                            if node.score > 0.3:
+                                has_relevant_sources = True
+                                break
+                        else:
                             has_relevant_sources = True
                             break
-                    else:
-                        # If no score available, assume relevance (legacy behavior)
-                        has_relevant_sources = True
-                        break
             
-            # Only extract sources if we have relevant retrieved nodes
+            # Extract sources from retrieved nodes
             if has_relevant_sources and retrieved_nodes:
                 # Extract sources from retrieved nodes
                 for node in retrieved_nodes:
@@ -160,42 +168,53 @@ class FlexCubeQueryEngine:
             
             # Check if answer seems to be from general knowledge vs. documents
             answer_lower = answer.lower()
-            question_lower = question.lower()
             
-            # Phrases that indicate the LLM found the context irrelevant
-            # When the LLM says these, it means it answered from general knowledge, not RAG
+            # Phrases that indicate the LLM found the context/documents irrelevant
+            # When the LLM says these, it means the RAG documents don't have the answer
+            # Important: Include variations with "text", "context", "document", "provided"
             irrelevant_context_phrases = [
-                "doesn't pertain",
-                "does not pertain",
-                "not related to",
-                "no information regarding",
+                # Direct statements about missing information
+                "does not contain any information",
+                "doesn't contain any information",
+                "does not contain information",
+                "doesn't contain information",
                 "no information about",
-                "context doesn't",
-                "context does not",
-                "provided context",
+                "no information regarding",
+                "not contain any information",
+                # Context/text/document variations
+                "text does not contain",
+                "text doesn't contain",
+                "context does not contain",
+                "context doesn't contain",
+                "document does not contain",
+                "provided text does not",
+                "provided context does not",
+                # Relevance statements  
+                "not related to",
                 "not relevant to",
                 "isn't relevant",
                 "is not relevant",
-                "sorry for any confusion",
+                "doesn't pertain",
+                "does not pertain",
+                # Inability statements
                 "i don't have information",
                 "i cannot find",
-                "not mentioned in",
-                "outside the scope"
+                "cannot answer based on",
+                "unable to find",
+                "no relevant information",
+                "outside the scope",
+                "not mentioned in"
             ]
             
             # Check if LLM indicated the context was not useful
             context_was_irrelevant = any(phrase in answer_lower for phrase in irrelevant_context_phrases)
             
-            # Keywords that suggest FlexCube-specific content
-            flexcube_keywords = ['flexcube', 'oracle', 'banking', 'account', 'transaction', 
-                               'loan', 'deposit', 'customer', 'error', 'module', 'screen',
-                               'microfinance', 'ledger', 'gl', 'branch']
+            # Log for debugging
+            logger.debug(f"is_flexcube_related: {is_flexcube_related}, context_was_irrelevant: {context_was_irrelevant}, has_relevant_sources: {has_relevant_sources}")
             
-            # Check if question mentions FlexCube-related terms (check question only, not answer)
-            is_flexcube_related = any(keyword in question_lower for keyword in flexcube_keywords)
-            
-            # If RAG context was irrelevant and question is NOT FlexCube-related,
+            # CRITICAL: If RAG context was irrelevant and question is NOT FlexCube-related,
             # make a second call to the LLM to answer from general knowledge
+            # This is the TWO-TIER flow: RAG first, then general knowledge fallback
             if context_was_irrelevant and not is_flexcube_related:
                 logger.info("RAG context irrelevant for general question - asking LLM to answer from general knowledge")
                 
@@ -216,10 +235,13 @@ Please provide a helpful and accurate answer."""
                 logger.info("Answered from general knowledge - no document sources")
             
             elif context_was_irrelevant and is_flexcube_related:
-                # FlexCube question but context wasn't helpful - keep RAG answer but clear sources
-                sources = []
-                seen_sources = set()
-                logger.info("FlexCube question but RAG context unhelpful - clearing sources")
+                # FlexCube question but LLM indicated context wasn't helpful
+                # However, if we already have sources from retrieval, KEEP them
+                # The LLM might just be using different phrasing
+                if sources:
+                    logger.info("FlexCube question - keeping existing sources despite LLM phrasing")
+                else:
+                    logger.info("FlexCube question but no sources found - keeping RAG answer")
             
             elif not is_flexcube_related and not has_relevant_sources:
                 # General question with low relevance - fall back to general knowledge

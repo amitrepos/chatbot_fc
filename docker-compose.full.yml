@@ -1,0 +1,126 @@
+# =============================================================================
+# FlexCube AI Assistant - Complete Docker Compose
+# =============================================================================
+# This docker-compose file deploys the entire stack:
+# - Qdrant (Vector Database)
+# - Ollama (LLM Runtime) 
+# - Ask-NUO (FastAPI Application)
+#
+# Usage:
+#   Start:   docker-compose -f docker-compose.full.yml up -d
+#   Stop:    docker-compose -f docker-compose.full.yml down
+#   Logs:    docker-compose -f docker-compose.full.yml logs -f
+#   Rebuild: docker-compose -f docker-compose.full.yml up -d --build
+#
+# After starting, you need to pull models into Ollama:
+#   docker exec ollama ollama pull mistral:7b
+#   docker exec ollama ollama pull llava:7b
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # Qdrant - Vector Database for storing document embeddings
+  # ===========================================================================
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"   # REST API
+      - "6334:6334"   # gRPC API
+    volumes:
+      - qdrant_storage:/qdrant/storage
+      - qdrant_config:/qdrant/config
+    networks:
+      - flexcube-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================================================
+  # Ollama - Local LLM Runtime for Mistral and LLaVA models
+  # ===========================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - flexcube-net
+    restart: unless-stopped
+    # Note: After first start, pull models with:
+    # docker exec ollama ollama pull mistral:7b
+    # docker exec ollama ollama pull llava:7b
+    deploy:
+      resources:
+        limits:
+          memory: 20G  # Adjust based on server capacity
+
+  # ===========================================================================
+  # Ask-NUO - FastAPI Application (RAG Pipeline + Web UI)
+  # ===========================================================================
+  asknuo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: flexcube-ai-assistant:latest
+    container_name: asknuo
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persistent document storage - survives container restarts
+      - ./data/documents:/app/data/documents
+      # Logs directory
+      - ./logs:/app/logs
+    environment:
+      # Connection to Ollama service
+      - OLLAMA_BASE_URL=http://ollama:11434
+      # Connection to Qdrant service
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      # Logging level
+      - LOG_LEVEL=INFO
+    networks:
+      - flexcube-net
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s  # Allow time for model loading
+      retries: 3
+
+# =============================================================================
+# Networks - Internal network for service communication
+# =============================================================================
+networks:
+  flexcube-net:
+    driver: bridge
+
+# =============================================================================
+# Volumes - Persistent storage for data
+# =============================================================================
+volumes:
+  # Qdrant vector database storage
+  qdrant_storage:
+    name: flexcube_qdrant_storage
+  
+  # Qdrant configuration
+  qdrant_config:
+    name: flexcube_qdrant_config
+  
+  # Ollama models storage (~10GB for Mistral + LLaVA)
+  ollama_data:
+    name: flexcube_ollama_data
+

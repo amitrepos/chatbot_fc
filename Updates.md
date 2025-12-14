@@ -32,6 +32,25 @@
 - Works with screenshots copied from any source (Snipping Tool, screenshots, etc.)
 - Visual feedback confirms successful paste
 
+## 2025-12-14 00:10 - Docker Configuration & Cleanup Scripts
+
+**Timestamp:** 2025-12-14 00:10:00
+
+**Action:** Created deployment and maintenance scripts
+
+**New Files:**
+1. **`Dockerfile`** - Container image for the FastAPI application
+2. **`docker-compose.full.yml`** - Complete stack (Qdrant + Ollama + App)
+3. **`scripts/cleanup.sh`** - Complete removal script
+4. **`scripts/docker-build-push.sh`** - Build and push to Docker Hub
+5. **`scripts/deploy-new-server.sh`** - Fresh server deployment
+6. **`scripts/README.md`** - Documentation for scripts
+
+**Usage:**
+- Build & Push: `./scripts/docker-build-push.sh <dockerhub-username>`
+- Deploy New Server: `sudo bash scripts/deploy-new-server.sh <username>`
+- Cleanup: `sudo bash scripts/cleanup.sh`
+
 ## 2025-12-13 23:25 - Enhanced Document Management UI
 
 **Timestamp:** 2025-12-13 23:25:00
