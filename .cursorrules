@@ -44,6 +44,34 @@ Phase 6: Production Hardening (Nginx, SSL, monitoring)
 - Use environment variables for configuration
 - Never hardcode secrets or API keys
 
+## Testing Requirements (MANDATORY)
+- **Unit Tests:** Write unit tests for EVERY function, class, or module you create or modify
+  - Test all public methods and functions
+  - Test edge cases and error conditions
+  - Test both success and failure paths
+  - Use pytest framework
+  - Place tests in `src/tests/` directory mirroring source structure
+- **Integration Tests:** Write integration tests for:
+  - API endpoints (test full request/response cycle)
+  - Database operations (test CRUD operations with test database)
+  - RAG pipeline components (test end-to-end flows)
+  - Authentication and authorization flows
+- **Test Execution:** After completing any changes:
+  1. Run unit tests: `python -m pytest src/tests/ -v`
+  2. Run integration tests: `python -m pytest src/tests/integration/ -v`
+  3. Run all tests: `python -m pytest src/tests/ -v --cov=src --cov-report=term`
+  4. **MANDATORY:** Ensure all tests pass before considering work complete
+  5. If tests fail, fix the issues before proceeding
+- **Test Coverage:** Aim for >80% code coverage on new/modified code
+- **Regression Prevention:** Tests must verify that existing functionality is not broken
+- **Test Organization:**
+  - Unit tests: `src/tests/unit/` or `src/tests/test_<module_name>.py`
+  - Integration tests: `src/tests/integration/`
+  - Fixtures: `src/tests/conftest.py`
+- **Test Naming:** Use descriptive names: `test_<function_name>_<scenario>`
+  - Example: `test_query_engine_returns_sources_when_available`
+  - Example: `test_auth_requires_valid_jwt_token`
+
 ## When Suggesting Solutions
 - Prefer simple solutions over complex ones
 - Consider 32GB RAM constraint when suggesting models or batch sizes
@@ -58,4 +86,6 @@ Phase 6: Production Hardening (Nginx, SSL, monitoring)
 - Documentation goes in /docs
 
 ## Current Phase
-Starting with Phase 1 - Infrastructure Setup
+Phase 7: User Authentication & RBAC (Planning Complete - Ready for Implementation)
+- See `docs/PHASE_7_USER_AUTH_PLAN.md` for complete plan
+- See `docs/IMPLEMENTATION_STEPS.md` for step-by-step checklist

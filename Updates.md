@@ -1,5 +1,129 @@
 # Updates Log
 
+## 2025-12-17 - Step 6 Progress & Comprehensive Authentication Tests
+
+**Timestamp:** 2025-12-17 21:10:00
+
+**Action:** Fixed integration tests and created comprehensive authentication test suite
+
+**Issues Fixed:**
+
+1. **`get_user_permissions()` return type bug:**
+   - Bug: Code was treating permissions as objects with `.name` attribute
+   - Fix: Permissions are already strings, removed incorrect attribute access
+   - Affected endpoints: `/api/auth/me` and `/api/auth/refresh`
+
+2. **Password validation not working:**
+   - Bug: `validate_password_strength()` returns tuple, code expected exception
+   - Fix: Changed to check return value `(is_valid, error_message)` properly
+
+3. **Integration tests timing out:**
+   - Bug: Tests using `test_user_with_token` fixture didn't work with TestClient
+   - Cause: Fixtures create data in transaction (rolled back), TestClient uses separate DB session
+   - Fix: Tests now create users via API (`POST /api/auth/register`) instead of fixtures
+
+4. **Test users persisting between runs:**
+   - Bug: Static usernames caused "already registered" errors
+   - Fix: All tests now use UUID-based unique usernames
+
+**New/Updated Tests (83+ tests passing):**
+
+**Unit Tests (`src/tests/unit/`):**
+- `test_password.py`: 10 tests (password hashing, strength validation)
+- `test_auth.py`: 9 tests (JWT creation, validation, expiration)
+- `test_permissions.py`: 5 tests (permission checking)
+- `test_crud_operations.py`: 16 tests (CRUD for conversations, Q&A, feedback)
+- `test_database_connection.py`: 12 tests (NEW - database config, connection, tables)
+
+**Integration Tests (`src/tests/integration/test_api_endpoints.py`):**
+- `TestAuthEndpoints`: 19 tests
+  - Registration: creates user, rejects duplicates, validates password/email
+  - Login: returns token, rejects invalid, supports email login
+  - Logout: works, requires auth
+  - Token refresh: works, requires auth
+  - Protected endpoints: validate tokens
+- `TestFaviconEndpoint`: 2 tests
+- `TestHealthEndpoint`: 2 tests
+- `TestFullAuthenticationFlow`: 3 tests
+
+**Files Modified:**
+- `src/api/main.py`: Fixed permission handling, password validation
+- `src/tests/integration/test_api_endpoints.py`: Updated all auth tests to use API
+- `src/tests/unit/test_database_connection.py`: NEW - database connection tests
+- `src/tests/conftest.py`: Updated database URL for TCP connection
+- `docs/IMPLEMENTATION_STEPS.md`: Updated progress tracking
+
+**Step 6 Progress (80% complete):**
+- ✅ Login/signup page
+- ✅ JWT token storage (localStorage)
+- ✅ API request interceptor
+- ✅ Feedback buttons (like/dislike)
+- ✅ Conversation history (in-memory)
+- ✅ User profile dropdown
+- ✅ Route protection
+- ⬜ Role-based UI rendering (pending)
+- ⬜ Admin UI pages (pending)
+
+---
+
+## 2025-01-27 - Step 5: Feedback Endpoints Implementation
+
+**Timestamp:** 2025-01-27
+
+**Action:** Completed Step 5 of Phase 7: Enhanced Feedback Endpoints
+
+**Changes:**
+
+1. **Updated POST `/api/feedback` Endpoint:**
+   - Removed ownership restriction - any authenticated user can now provide feedback on any Q&A pair
+   - Maintains existing functionality: accepts qa_pair_id, rating (1=dislike, 2=like), optional comment
+   - Automatically updates existing feedback if user has already provided feedback for the same Q&A pair
+
+2. **New GET `/api/feedback/qa-pair/{qa_pair_id}` Endpoint:**
+   - Retrieves all feedback for a specific Q&A pair
+   - Returns detailed feedback information including:
+     - Feedback ID, Q&A pair ID, user ID, username
+     - Rating (1 or 2), optional feedback text
+     - Creation timestamp
+   - Returns total count of feedback entries
+   - Requires authentication
+
+3. **New DELETE `/api/feedback/{feedback_id}` Endpoint:**
+   - Allows users to delete their own feedback
+   - Validates ownership - users can only delete feedback they created
+   - Returns 204 No Content on successful deletion
+   - Requires authentication
+
+4. **New Response Models:**
+   - `FeedbackDetailResponse`: Detailed feedback information with user details
+   - `FeedbackListResponse`: List of feedback with total count
+
+5. **Comprehensive Test Coverage:**
+   - Updated existing test to verify any user can provide feedback
+   - Added test for GET endpoint (retrieval, authentication, validation)
+   - Added tests for DELETE endpoint (success, authentication, ownership validation)
+   - All tests passing
+
+**Technical Details:**
+- Endpoints use existing CRUD operations from `src/database/crud.py`
+- Proper error handling with HTTP status codes (404, 403, 400)
+- Logging for audit trail
+- Follows existing authentication and permission patterns
+
+**Files Modified:**
+- `src/api/main.py`: Added GET and DELETE endpoints, updated POST endpoint, added response models
+- `src/tests/integration/test_api_endpoints.py`: Updated and added comprehensive tests
+
+**Deliverables:**
+- ✅ Feedback endpoints working (POST, GET, DELETE)
+- ✅ Like/dislike stored in database
+- ✅ Feedback linked to Q&A pairs
+- ✅ Users can view/delete their feedback
+- ✅ Any authenticated user can provide feedback on any Q&A pair
+- ✅ Comprehensive test coverage
+
+---
+
 ## 2025-12-17 - Query Expansion for Improved Semantic Retrieval
 
 **Timestamp:** 2025-12-17 18:50:00

@@ -14,8 +14,9 @@
 | Phase 4 | User Interface | ✅ Complete | 100% |
 | Phase 5 | Vision Support | ✅ Complete | 100% |
 | Phase 6 | Production Hardening | 🚧 Pending | 0% |
+| Phase 7 | User Authentication & RBAC | 📋 Planning Complete | 0% |
 
-**Overall Progress: 5/6 Phases Complete (83%)**
+**Overall Progress: 5/7 Phases Complete (71%)**
 
 ---
 
@@ -98,6 +99,31 @@
 ---
 
 ## 🚧 PENDING - Phase 6: Production Hardening
+
+[Details in original IMPLEMENTATION_PLAN.md - archived]
+
+---
+
+## 📋 PLANNING - Phase 7: User Authentication & RBAC
+
+**Status:** Planning Complete - Ready for Implementation  
+**Plan Document:** [PHASE_7_USER_AUTH_PLAN.md](./PHASE_7_USER_AUTH_PLAN.md)  
+**Implementation Steps:** [IMPLEMENTATION_STEPS.md](./IMPLEMENTATION_STEPS.md)
+
+### Features to Implement:
+- [ ] User registration and login
+- [ ] JWT-based authentication
+- [ ] Role-based access control (operational_admin, general_user)
+- [ ] Q&A storage in PostgreSQL
+- [ ] Feedback system (like/dislike)
+- [ ] Admin dashboard
+- [ ] User management
+- [ ] Training data export
+
+### Estimated Time: 30-40 hours
+### Total Steps: 9 steps
+
+---
 
 ### 6.1 Nginx Setup
 - ❌ Configure reverse proxy

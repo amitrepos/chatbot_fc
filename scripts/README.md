@@ -6,7 +6,32 @@ This folder contains utility scripts for managing the application.
 
 ## 📁 Available Scripts
 
-### 1. `cleanup.sh` - Complete Removal
+### 1. `seed_admin_user.py` - Create Default Admin User
+**Purpose:** Creates a default admin user for initial system access.
+
+**Default Credentials:**
+- Username: `admin`
+- Email: `admin@flexcube.local`
+- Password: `Admin123!`
+
+**Usage:**
+```bash
+cd /var/www/chatbot_FC
+python3 scripts/seed_admin_user.py
+```
+
+**What it does:**
+- Creates admin user if it doesn't exist
+- Assigns `operational_admin` role template (all permissions)
+- Displays credentials for reference
+
+**⚠️ IMPORTANT:** Change the default password after first login!
+
+**See also:** `docs/ADMIN_USER_SETUP.md` for detailed instructions.
+
+---
+
+### 2. `cleanup.sh` - Complete Removal
 **Purpose:** Completely removes all application components to free server space.
 
 **What it removes:**
