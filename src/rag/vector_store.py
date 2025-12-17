@@ -132,3 +132,4 @@ def create_vector_store(
     vector_store.create_collection_if_not_exists()
     return vector_store
 
+

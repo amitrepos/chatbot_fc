@@ -143,3 +143,4 @@ class FlexCubeDocumentLoader:
         logger.info(f"Loaded {len(all_documents)} total documents from directory")
         return all_documents
 
+

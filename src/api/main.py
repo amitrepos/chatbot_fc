@@ -473,9 +473,8 @@ async def root():
                 <div class="query-section">
                     <label><strong>Upload Screenshot:</strong></label>
                     <div class="image-upload-area" id="imageUploadArea" onclick="document.getElementById('imageInput').click()">
-                        <p style="font-size: 18px; margin-bottom: 10px;">📸 Click, drag & drop, or paste image here</p>
+                        <p style="font-size: 18px; margin-bottom: 10px;">📸 Click or drag & drop image here</p>
                         <p style="color: #6c757d; font-size: 14px;">Supports: PNG, JPG, JPEG (Max 10MB)</p>
-                        <p style="color: #667eea; font-size: 13px; margin-top: 8px; font-weight: 500;">💡 Tip: Press Ctrl+V (or Cmd+V on Mac) to paste from clipboard</p>
                     </div>
                     <input type="file" id="imageInput" accept="image/*" style="display: none;" onchange="handleImageSelect(event)">
                     <div id="imagePreview" class="image-preview hidden"></div>
@@ -490,12 +489,12 @@ async def root():
             <!-- Documents Tab -->
             <div id="documents-tab" class="tab-content">
                 <div class="query-section">
-                    <label><strong>📤 Upload New Document:</strong></label>
-                    <div class="image-upload-area" id="docUploadArea" onclick="document.getElementById('docInput').click()">
+                    <label><strong>Upload Document:</strong></label>
+                    <div class="image-upload-area" onclick="document.getElementById('docInput').click()">
                         <p style="font-size: 18px; margin-bottom: 10px;">📄 Click or drag & drop document here</p>
-                        <p style="color: #6c757d; font-size: 14px;">Supports: PDF, DOCX, TXT (Max 50MB)</p>
+                        <p style="color: #6c757d; font-size: 14px;">Supports: PDF, DOCX, TXT</p>
                     </div>
-                    <input type="file" id="docInput" accept=".pdf,.docx,.txt" style="display: none;" onchange="handleDocumentSelect(event)" multiple>
+                    <input type="file" id="docInput" accept=".pdf,.docx,.txt" style="display: none;" onchange="handleDocumentSelect(event)">
                     <div id="uploadProgress" class="hidden">
                         <div class="progress-bar">
                             <div class="progress-fill" id="progressFill" style="width: 0%"></div>
@@ -503,29 +502,8 @@ async def root():
                         <p id="uploadStatus" style="text-align: center; margin-top: 10px; color: #667eea;"></p>
                     </div>
                 </div>
-                
-                <div class="query-section" style="margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
-                    <label><strong>⚙️ Index Management:</strong></label>
-                    <p style="color: #6c757d; font-size: 13px; margin: 10px 0;">
-                        ✅ <strong>Uploaded documents are automatically indexed</strong> - ready to query immediately!</p><p style="color: #6c757d; font-size: 12px; margin: 5px 0;">Use "Rebuild Index" only after deleting documents to clean up orphaned data.
-                    </p>
-                    <div class="button-group" style="margin-top: 15px;">
-                        <button onclick="reindexDocuments()" id="reindexBtn" class="secondary">🔄 Rebuild Index (after deletions)</button>
-                        <button onclick="loadDocuments()" class="secondary">🔃 Refresh List</button>
-                    </div>
-                    <div id="indexStatus" class="hidden" style="margin-top: 15px;">
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="indexProgressFill" style="width: 0%"></div>
-                        </div>
-                        <p id="indexStatusText" style="text-align: center; margin-top: 10px; color: #667eea;"></p>
-                    </div>
-                </div>
-                
-                <div id="documents-list-section" style="margin-top: 25px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h3 style="margin: 0;">📚 Documents in Knowledge Base</h3>
-                        <span id="totalChunks" style="color: #667eea; font-size: 14px;"></span>
-                    </div>
+                <div id="documents-list-section">
+                    <h3 style="margin: 25px 0 15px 0;">📚 Indexed Documents</h3>
                     <div id="documentsList" class="documents-list">
                         <p style="color: #6c757d; text-align: center; padding: 20px;">Loading documents...</p>
                     </div>
@@ -543,7 +521,6 @@ async def root():
                 loadConversationHistory();
                 loadDocuments();
                 setupDragAndDrop();
-                setupClipboardPaste();
             });
             
             // Tab switching
@@ -556,7 +533,6 @@ async def root():
             
             // Image handling
             function setupDragAndDrop() {
-                // Setup for image upload area
                 const uploadArea = document.getElementById('imageUploadArea');
                 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
                     uploadArea.addEventListener(eventName, preventDefaults, false);
@@ -579,97 +555,7 @@ async def root():
                         handleImageFile(files[0]);
                     }
                 }
-                
-                // Setup for document upload area
-                const docUploadArea = document.getElementById('docUploadArea');
-                if (docUploadArea) {
-                    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-                        docUploadArea.addEventListener(eventName, preventDefaults, false);
-                    });
-                    ['dragenter', 'dragover'].forEach(eventName => {
-                        docUploadArea.addEventListener(eventName, () => docUploadArea.classList.add('dragover'), false);
-                    });
-                    ['dragleave', 'drop'].forEach(eventName => {
-                        docUploadArea.addEventListener(eventName, () => docUploadArea.classList.remove('dragover'), false);
-                    });
-                    docUploadArea.addEventListener('drop', handleDocDrop, false);
-                    function handleDocDrop(e) {
-                        const dt = e.dataTransfer;
-                        const files = dt.files;
-                        if (files.length > 0) {
-                            // Upload all dropped files
-                            Array.from(files).forEach(file => {
-                                if (file.name.match(/\.(pdf|docx|txt)$/i)) {
-                                    uploadDocument(file);
-                                } else {
-                                    alert('Unsupported file type: ' + file.name + '\\nSupported: PDF, DOCX, TXT');
-                                }
-                            });
-                        }
-                    }
-                }
             }
-            
-            // Clipboard paste handling for image upload
-            // Detects when user pastes an image (Ctrl+V / Cmd+V) while Image Query tab is active
-            // Converts clipboard image to File object and processes it
-            function setupClipboardPaste() {
-                // Listen for paste events on the entire document
-                // Only process if image tab is currently active
-                document.addEventListener('paste', function(e) {
-                    // Check if image tab is currently active
-                    const imageTab = document.getElementById('image-tab');
-                    if (!imageTab || !imageTab.classList.contains('active')) {
-                        return; // Don't handle paste if image tab is not active
-                    }
-                    
-                    // Get clipboard data
-                    const items = e.clipboardData?.items;
-                    if (!items) {
-                        return;
-                    }
-                    
-                    // Look for image items in clipboard
-                    for (let i = 0; i < items.length; i++) {
-                        const item = items[i];
-                        
-                        // Check if the pasted item is an image
-                        if (item.type.indexOf('image') !== -1) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            
-                            // Get the image file from clipboard
-                            const blob = item.getAsFile();
-                            if (!blob) {
-                                return;
-                            }
-                            
-                            // Convert blob to File object with a proper name
-                            // Generate timestamp-based filename for pasted images
-                            const now = new Date();
-                            const timestamp = now.getTime();
-                            const fileExtension = blob.type.split('/')[1] || 'png';
-                            const fileName = 'pasted-image-' + timestamp + '.' + fileExtension;
-                            
-                            // Create a File object from the blob
-                            const file = new File([blob], fileName, { type: blob.type, lastModified: timestamp });
-                            
-                            // Use existing image handler to validate and display
-                            handleImageFile(file);
-                            
-                            // Provide visual feedback - briefly highlight upload area
-                            const uploadArea = document.getElementById('imageUploadArea');
-                            uploadArea.style.background = '#e8f5e9';
-                            setTimeout(() => {
-                                uploadArea.style.background = '#f8f9ff';
-                            }, 500);
-                            
-                            return; // Stop processing after handling image
-                        }
-                    }
-                });
-            }
-
             
             function handleImageSelect(event) {
                 if (event.target.files && event.target.files[0]) {
@@ -734,7 +620,7 @@ async def root():
                             });
                             html += '</ul>';
                         } else {
-                            html += '<li><code style="background-color: #e3f2fd; color: #1565c0;">AI Model (General Knowledge)</code></li>';
+                            html += '<p style="color: #95a5a6; font-style: italic;">No specific sources identified.</p>';
                         }
                         html += '</div></div>';
                         answerDiv.innerHTML = html;
@@ -778,7 +664,7 @@ async def root():
                     xhr.onload = function() {
                         if (xhr.status === 200) {
                             progressFill.style.width = '100%';
-                            statusText.textContent = '✅ Document indexed! Ready to query.';
+                            statusText.textContent = 'Indexing document...';
                             setTimeout(() => {
                                 progressDiv.classList.add('hidden');
                                 statusText.textContent = '';
@@ -802,27 +688,18 @@ async def root():
                     const response = await fetch('/api/documents');
                     const data = await response.json();
                     const listDiv = document.getElementById('documentsList');
-                    const totalChunksSpan = document.getElementById('totalChunks');
-                    
-                    // Update total chunks display
-                    if (data.total_chunks) {
-                        totalChunksSpan.textContent = `Total indexed: ${data.total_chunks} chunks`;
-                    } else {
-                        totalChunksSpan.textContent = '';
-                    }
-                    
                     if (data.documents && data.documents.length > 0) {
                         listDiv.innerHTML = data.documents.map(doc => `
                             <div class="document-item">
                                 <div class="document-info">
-                                    <div class="document-name">📄 ${escapeHtml(doc.filename)}</div>
-                                    <div class="document-meta">${doc.size ? formatBytes(doc.size) : ''}</div>
+                                    <div class="document-name">${escapeHtml(doc.filename)}</div>
+                                    <div class="document-meta">${doc.size ? formatBytes(doc.size) : ''} ${doc.chunks ? '• ' + doc.chunks + ' chunks' : ''}</div>
                                 </div>
-                                <button class="danger" onclick="deleteDocument('${escapeHtml(doc.filename)}')" title="Delete document">🗑️ Delete</button>
+                                <button class="danger" onclick="deleteDocument('${escapeHtml(doc.filename)}')">Delete</button>
                             </div>
                         `).join('');
                     } else {
-                        listDiv.innerHTML = '<p style="color: #6c757d; text-align: center; padding: 20px;">No documents uploaded yet. Upload PDF, DOCX, or TXT files above.</p>';
+                        listDiv.innerHTML = '<p style="color: #6c757d; text-align: center; padding: 20px;">No documents indexed yet.</p>';
                     }
                 } catch (error) {
                     document.getElementById('documentsList').innerHTML = '<p class="error">Error loading documents: ' + error.message + '</p>';
@@ -830,75 +707,21 @@ async def root():
             }
             
             async function deleteDocument(filename) {
-                if (!confirm('Delete "' + filename + '"?\\n\\nNote: You should rebuild the index after deleting to update the search index.')) return;
+                if (!confirm('Are you sure you want to delete ' + filename + '?')) return;
                 try {
                     const response = await fetch('/api/documents/' + encodeURIComponent(filename), {
                         method: 'DELETE'
                     });
                     if (response.ok) {
                         loadDocuments();
-                        // Show reminder to reindex
-                        document.getElementById('indexStatusText').textContent = '⚠️ Document deleted. Click "Rebuild Index" to update the search index.';
-                        document.getElementById('indexStatus').classList.remove('hidden');
                     } else {
-                        const data = await response.json();
-                        alert('Error: ' + (data.detail || 'Could not delete document'));
+                        alert('Error deleting document');
                     }
                 } catch (error) {
                     alert('Error: ' + error.message);
                 }
             }
             
-            async function reindexDocuments() {
-                const reindexBtn = document.getElementById('reindexBtn');
-                const indexStatus = document.getElementById('indexStatus');
-                const progressFill = document.getElementById('indexProgressFill');
-                const statusText = document.getElementById('indexStatusText');
-                
-                if (!confirm('Rebuild the entire index?\\n\\nThis will rebuild the entire search index. It may take several minutes depending on document size.')) return;
-                
-                reindexBtn.disabled = true;
-                reindexBtn.textContent = '🔄 Reindexing...';
-                indexStatus.classList.remove('hidden');
-                progressFill.style.width = '10%';
-                statusText.textContent = 'Starting reindex... This may take several minutes.';
-                
-                // Simulate progress while waiting
-                let progress = 10;
-                const progressInterval = setInterval(() => {
-                    progress = Math.min(progress + 5, 90);
-                    progressFill.style.width = progress + '%';
-                }, 2000);
-                
-                try {
-                    const response = await fetch('/api/documents/reindex', {
-                        method: 'POST'
-                    });
-                    
-                    clearInterval(progressInterval);
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        progressFill.style.width = '100%';
-                        statusText.innerHTML = `✅ <strong>Reindex complete!</strong> ${data.documents_count} documents → ${data.chunks_indexed} chunks (took ${data.processing_time}s)`;
-                        statusText.style.color = '#28a745';
-                        loadDocuments();
-                    } else {
-                        const data = await response.json();
-                        progressFill.style.width = '0%';
-                        statusText.innerHTML = '❌ Error: ' + (data.detail || 'Reindex failed');
-                        statusText.style.color = '#dc3545';
-                    }
-                } catch (error) {
-                    clearInterval(progressInterval);
-                    progressFill.style.width = '0%';
-                    statusText.innerHTML = '❌ Error: ' + error.message;
-                    statusText.style.color = '#dc3545';
-                } finally {
-                    reindexBtn.disabled = false;
-                    reindexBtn.textContent = '🔄 Rebuild Index (after deletions)';
-                }
-            }
             // Text query functions (existing)
             function loadConversationHistory() {
                 const historyDiv = document.getElementById('conversation-history');
@@ -918,7 +741,7 @@ async def root():
                             });
                             html += '</ul>';
                         } else {
-                            html += '<li><code style="background-color: #e3f2fd; color: #1565c0;">AI Model (General Knowledge)</code></li>';
+                            html += '<p style="color: #95a5a6; font-style: italic;">No specific sources identified.</p>';
                         }
                         html += '</div>';
                         if (item.processing_time) {
@@ -985,7 +808,7 @@ async def root():
                             });
                             html += '</ul>';
                         } else {
-                            html += '<li><code style="background-color: #e3f2fd; color: #1565c0;">AI Model (General Knowledge)</code></li>';
+                            html += '<p style="color: #95a5a6; font-style: italic;">No specific sources identified.</p>';
                         }
                         html += '</div></div>';
                         answerDiv.innerHTML = html;
@@ -1209,102 +1032,16 @@ async def delete_document(filename: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
-
-@app.post("/api/documents/reindex")
-async def reindex_documents():
-    """
-    Reindex all documents in the knowledge base.
-    
-    This clears the existing vector index and re-indexes all documents
-    from the data/documents directory. Use this after:
-    - Uploading new documents
-    - Deleting documents
-    - Fixing document issues
-    
-    Returns:
-        dict: Reindexing status with chunk count
-    """
-    import time
-    start_time = time.time()
-    
-    try:
-        global rag_pipeline
-        
-        logger.info("Starting full document reindex...")
-        
-        # Get data directory
-        data_dir = "/var/www/chatbot_FC/data/documents"
-        
-        if not os.path.exists(data_dir):
-            raise HTTPException(status_code=400, detail="Documents directory not found")
-        
-        # Count documents
-        doc_files = [f for f in os.listdir(data_dir) 
-                    if os.path.isfile(os.path.join(data_dir, f)) 
-                    and f.lower().endswith(('.pdf', '.docx', '.txt'))]
-        
-        if not doc_files:
-            raise HTTPException(status_code=400, detail="No documents found to index")
-        
-        logger.info(f"Found {len(doc_files)} documents to index")
-        
-        # Clear the existing Qdrant collection and recreate
-        pipeline = get_pipeline()
-        
-        # Delete and recreate the collection to clear old data
-        try:
-            pipeline.vector_store.client.delete_collection(pipeline.vector_store.collection_name)
-            logger.info("Cleared existing vector collection")
-        except Exception as e:
-            logger.warning(f"Could not clear collection (may not exist): {e}")
-        
-        # Recreate collection
-        pipeline.vector_store.create_collection_if_not_exists()
-        
-        # Reset the pipeline to force re-initialization
-        rag_pipeline = None
-        pipeline = get_pipeline()
-        
-        # Index all documents
-        num_chunks = pipeline.index_documents(directory=data_dir)
-        
-        processing_time = time.time() - start_time
-        
-        logger.info(f"Reindexing completed: {num_chunks} chunks from {len(doc_files)} documents in {processing_time:.2f}s")
-        
-        return {
-            "status": "success",
-            "message": f"Successfully reindexed {len(doc_files)} documents",
-            "documents_count": len(doc_files),
-            "chunks_indexed": num_chunks,
-            "processing_time": round(processing_time, 2)
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error reindexing documents: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.post("/api/query/image", response_model=QueryResponse)
-async def query_image(image: UploadFile = File(...), context: Optional[str] = None):
+async def query_image(image: UploadFile = File(...)):
     """
     Query the RAG pipeline with an image/screenshot.
     
-    This endpoint accepts an image, extracts text/error information using LLaVA vision model,
+    This endpoint accepts an image, extracts text/error information using vision model,
     and then queries the RAG pipeline for solutions.
-    
-    Flow:
-    1. Receive screenshot image
-    2. Send to LLaVA to extract error code, message, screen name
-    3. Create optimized query from extracted info
-    4. Search RAG pipeline for solutions
-    5. Return answer with sources
     
     Args:
         image: Image file (screenshot of FlexCube error)
-        context: Optional additional context from user
         
     Returns:
         QueryResponse: Answer with sources
@@ -1313,85 +1050,21 @@ async def query_image(image: UploadFile = File(...), context: Optional[str] = No
     start_time = time.time()
     
     try:
-        # Import vision module
-        from src.rag.vision import FlexCubeVision
-        
-        # Validate file type
-        if not image.content_type or not image.content_type.startswith('image/'):
-            raise HTTPException(status_code=400, detail="File must be an image (PNG, JPG, etc.)")
-        
-        # Read image data
-        image_data = await image.read()
-        logger.info(f"Image query received: {image.filename} ({len(image_data)} bytes)")
-        
-        # Initialize vision module
-        vision = FlexCubeVision(model_name="llava:7b", base_url="http://localhost:11434")
-        
-        # Analyze screenshot with LLaVA
-        logger.info("Analyzing screenshot with LLaVA...")
-        extracted = vision.analyze_screenshot(image_data, additional_context=context)
-        
-        # Log extracted information
-        logger.info(f"Extracted - Error Code: {extracted.get('error_code')}, "
-                   f"Screen: {extracted.get('screen_name')}, "
-                   f"Message: {(extracted.get('error_message') or '')[:50]}...")
-        
-        # Create RAG query from extracted information
-        rag_query = vision.create_rag_query(extracted)
-        logger.info(f"Generated RAG query: {rag_query}")
-        
-        # Query the RAG pipeline
-        pipeline = get_pipeline()
-        answer, sources = pipeline.query(rag_query)
-        
-        # Prepend extraction summary to answer
-        extraction_summary = _format_extraction_summary(extracted)
-        full_answer = f"{extraction_summary}\n\n**Solution:**\n{answer}"
-        
-        processing_time = time.time() - start_time
+        # For now, return a placeholder message since vision support isn't implemented yet
+        # This will be implemented in Phase 5 with LLaVA integration
+        logger.info(f"Image query received: {image.filename} ({image.size} bytes)")
         
         return QueryResponse(
-            answer=full_answer,
-            sources=sources if sources else [],
-            processing_time=round(processing_time, 2)
+            answer="Image query support is coming soon! This feature will use LLaVA vision model to analyze screenshots and extract error information, then search the documentation for solutions. Currently, please use the text query tab.",
+            sources=[],
+            processing_time=round(time.time() - start_time, 2)
         )
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error processing image query: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _format_extraction_summary(extracted: dict) -> str:
-    """
-    Format extracted information into a readable summary.
-    
-    Args:
-        extracted: Dictionary from vision analysis
-        
-    Returns:
-        Formatted summary string
-    """
-    parts = ["**Extracted from Screenshot:**"]
-    
-    if extracted.get("error_code"):
-        parts.append(f"- **Error Code:** `{extracted['error_code']}`")
-    
-    if extracted.get("error_message"):
-        parts.append(f"- **Error Message:** {extracted['error_message']}")
-    
-    if extracted.get("screen_name"):
-        parts.append(f"- **Screen:** {extracted['screen_name']}")
-    
-    if extracted.get("description"):
-        parts.append(f"- **Description:** {extracted['description']}")
-    
-    if len(parts) == 1:
-        parts.append("- No specific error information could be extracted from the image.")
-    
-    return "\n".join(parts)
-
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

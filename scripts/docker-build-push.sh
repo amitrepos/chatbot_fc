@@ -120,3 +120,4 @@ echo "║     docker exec ollama ollama pull mistral:7b                 ║"
 echo "║     docker exec ollama ollama pull llava:7b                   ║"
 echo "╚════════════════════════════════════════════════════════════════╝${NC}"
 
+

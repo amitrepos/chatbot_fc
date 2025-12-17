@@ -5,18 +5,25 @@ This module provides the main query engine that combines:
 - Vector retrieval from Qdrant
 - LLM generation via Ollama/Mistral
 - Source citation for answers
+- Query expansion for improved semantic matching
+
+Enhanced Features:
+- Semantic query expansion using LLM to generate synonyms and related phrases
+- Multi-query retrieval for better recall on semantically distant content
+- Two-tier fallback: RAG first, then general knowledge if RAG irrelevant
 """
 
 from llama_index.core import VectorStoreIndex, get_response_synthesizer
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.response_synthesizers import ResponseMode
-from typing import Optional, List
+from typing import Optional, List, Dict
 from loguru import logger
 
 from .ollama_llm import OllamaLLM
 from .vector_store import FlexCubeVectorStore
 from .embeddings import BGEEmbeddings
+from .query_expander import QueryExpander, MultiQueryRetriever
 
 
 class FlexCubeQueryEngine:
@@ -25,6 +32,11 @@ class FlexCubeQueryEngine:
     
     Combines vector retrieval with LLM generation to answer questions
     about FlexCube documentation. Provides source citations for answers.
+    
+    Features:
+    - Query expansion: Generates synonyms and alternative phrasings before search
+    - Multi-query retrieval: Searches with expanded queries for better recall
+    - Two-tier fallback: RAG first, then LLM general knowledge if RAG irrelevant
     """
     
     def __init__(
@@ -33,10 +45,12 @@ class FlexCubeQueryEngine:
         embedding_model: BGEEmbeddings,
         llm_model: str = "mistral:7b",
         ollama_url: str = "http://localhost:11434",
-        similarity_top_k: int = 5
+        similarity_top_k: int = 5,
+        enable_query_expansion: bool = True,
+        expansion_mode: str = "combined"  # "combined" or "multi"
     ):
         """
-        Initialize query engine.
+        Initialize query engine with optional query expansion.
         
         Args:
             vector_store: Qdrant vector store instance
@@ -44,10 +58,16 @@ class FlexCubeQueryEngine:
             llm_model: Ollama model name
             ollama_url: Ollama API URL
             similarity_top_k: Number of top chunks to retrieve
+            enable_query_expansion: Enable semantic query expansion (default: True)
+            expansion_mode: 
+                - "combined": Single enriched query (faster, default)
+                - "multi": Multiple query retrievals merged (better recall, slower)
         """
         self.vector_store = vector_store
         self.embedding_model = embedding_model
         self.similarity_top_k = similarity_top_k
+        self.enable_query_expansion = enable_query_expansion
+        self.expansion_mode = expansion_mode
         
         logger.info("Initializing FlexCube query engine")
         
@@ -71,6 +91,32 @@ class FlexCubeQueryEngine:
             similarity_top_k=similarity_top_k
         )
         
+        # Initialize Query Expander for semantic query enhancement
+        # This generates synonyms and alternative phrasings to improve retrieval
+        if self.enable_query_expansion:
+            self.query_expander = QueryExpander(
+                llm=self.llm,
+                max_expansions=5,
+                include_original=True
+            )
+            
+            # Multi-query retriever (optional mode for better recall)
+            if self.expansion_mode == "multi":
+                self.multi_retriever = MultiQueryRetriever(
+                    base_retriever=self.retriever,
+                    query_expander=self.query_expander,
+                    top_k_per_query=3,
+                    final_top_k=7
+                )
+            else:
+                self.multi_retriever = None
+            
+            logger.info(f"Query expansion enabled (mode: {expansion_mode})")
+        else:
+            self.query_expander = None
+            self.multi_retriever = None
+            logger.info("Query expansion disabled")
+        
         # Create response synthesizer with source citation
         self.response_synthesizer = get_response_synthesizer(
             llm=self.llm,
@@ -89,6 +135,12 @@ class FlexCubeQueryEngine:
         """
         Query the RAG system with a question.
         
+        Uses query expansion to improve retrieval:
+        1. Expands question into synonyms and related phrases
+        2. Retrieves using expanded query for better semantic matching
+        3. Synthesizes answer from retrieved context
+        4. Falls back to general knowledge if RAG context irrelevant
+        
         Args:
             question: User's question about FlexCube
             
@@ -102,9 +154,36 @@ class FlexCubeQueryEngine:
             sources = []
             seen_sources = set()
             
-            # First, retrieve nodes to get sources BEFORE querying
-            # This ensures we always have source information
-            retrieved_nodes = self.retriever.retrieve(question)
+            # Store expansion details for potential debugging/display
+            expansion_details = None
+            
+            # STEP 1: Query Expansion (if enabled)
+            # Generates synonyms and alternative phrasings to bridge semantic gaps
+            # e.g., "logged in" → "signed in", "authenticated", "user sessions"
+            retrieval_query = question  # Default to original
+            
+            if self.enable_query_expansion and self.query_expander:
+                try:
+                    expansion_details = self.query_expander.expand(question)
+                    
+                    if self.expansion_mode == "combined":
+                        # Use semantically enriched combined query
+                        retrieval_query = expansion_details['combined_query']
+                        logger.info(f"Using expanded query ({len(retrieval_query)} chars)")
+                        logger.debug(f"Key terms: {expansion_details.get('key_terms', {})}")
+                    
+                except Exception as e:
+                    logger.warning(f"Query expansion failed, using original: {e}")
+                    retrieval_query = question
+            
+            # STEP 2: Retrieve documents
+            # Use multi-query retriever if enabled, otherwise standard retriever
+            if self.expansion_mode == "multi" and self.multi_retriever:
+                # Multi-query: retrieves for each expansion separately, merges results
+                retrieved_nodes = self.multi_retriever.retrieve(question)
+            else:
+                # Standard: single retrieval with (possibly expanded) query
+                retrieved_nodes = self.retriever.retrieve(retrieval_query)
             
             # Keywords that suggest FlexCube-specific content (check early)
             question_lower = question.lower()
@@ -306,6 +385,36 @@ Please provide a helpful and accurate answer."""
         except Exception as e:
             logger.error(f"Error processing query: {e}")
             raise
+    
+    def get_query_expansion(self, question: str) -> Dict:
+        """
+        Get query expansion details without performing retrieval.
+        
+        Useful for debugging or showing users what semantic expansions
+        were generated for their query.
+        
+        Args:
+            question: User's question
+            
+        Returns:
+            Dict with:
+                - original: Original question
+                - expanded_queries: List of semantic variations
+                - combined_query: Merged query for embedding
+                - key_terms: Dictionary of terms and their synonyms
+        """
+        if not self.enable_query_expansion or not self.query_expander:
+            return {
+                'original': question,
+                'expanded_queries': [],
+                'combined_query': question,
+                'key_terms': {},
+                'expansion_enabled': False
+            }
+        
+        details = self.query_expander.expand(question)
+        details['expansion_enabled'] = True
+        return details
     
     def add_documents(self, documents):
         """

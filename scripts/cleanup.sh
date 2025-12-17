@@ -176,3 +176,4 @@ echo ""
 echo "To reinstall later, use the Docker image:"
 echo "  docker pull yourusername/flexcube-ai-assistant:latest"
 
+

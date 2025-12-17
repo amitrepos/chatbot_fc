@@ -124,3 +124,4 @@ volumes:
   ollama_data:
     name: flexcube_ollama_data
 
+

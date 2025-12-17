@@ -72,3 +72,4 @@ def create_embedding_model(model_name: str = "BAAI/bge-large-en-v1.5") -> Huggin
     embeddings = BGEEmbeddings(model_name)
     return embeddings.get_embedding_model()
 
+

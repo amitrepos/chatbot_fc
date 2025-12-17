@@ -315,3 +315,4 @@ def create_vision_module(
     """
     return FlexCubeVision(model_name=model_name, base_url=base_url)
 
+

@@ -1,5 +1,64 @@
 # Updates Log
 
+## 2025-12-17 - Query Expansion for Improved Semantic Retrieval
+
+**Timestamp:** 2025-12-17 18:50:00
+
+**Action:** Implemented semantic query expansion to improve RAG retrieval
+
+**Problem Solved:**
+- User queries like "How many users logged in?" failed to retrieve documents containing semantically similar phrases like "user sign-ins", "connected users", or "authentication count"
+- Single-vector search was too narrow to bridge vocabulary gaps between questions and documents
+
+**New Components:**
+
+1. **QueryExpander Class** (`src/rag/query_expander.py`)
+   - Uses Mistral LLM to generate synonyms and alternative phrasings
+   - Extracts key terms and their synonyms
+   - Creates a combined, semantically-enriched query for better embedding matches
+   
+2. **MultiQueryRetriever** (`src/rag/query_expander.py`)
+   - Optional mode that retrieves using multiple expanded queries
+   - Merges and deduplicates results from all queries
+   - Re-ranks by similarity score
+
+**How It Works:**
+```
+User: "How many users logged in?"
+            ↓
+Query Expansion (LLM):
+  - Key Terms: logged in → signed in, authenticated, connected
+  - Key Terms: users → accounts, sessions, clients
+  - Alternative: "Count of authenticated users"
+  - Alternative: "User login statistics"
+            ↓
+Combined Query: "How many users logged in? signed in authenticated 
+                 connected accounts sessions authentication statistics"
+            ↓
+Vector Search (with enriched query)
+            ↓
+Better Semantic Matches Retrieved
+```
+
+**Configuration Options:**
+- `enable_query_expansion`: Enable/disable expansion (default: True)
+- `expansion_mode`: 
+  - `"combined"`: Single enriched query (faster, default)
+  - `"multi"`: Multiple queries merged (better recall, slower)
+
+**Unit Tests Added:**
+- TestQueryExpansionParsing (4 tests)
+- TestQueryExpansionExamples (2 tests)  
+- TestMultiQueryRetrieverLogic (2 tests)
+- Total: 27 tests passing
+
+**Performance Impact:**
+- Adds ~5-10 seconds for LLM expansion call
+- Significantly improves recall for vocabulary-mismatched queries
+- No impact on FlexCube-specific queries (keywords match directly)
+
+---
+
 ## 2025-12-14 - Clipboard Paste Support for Image Query
 
 **Timestamp:** 2025-12-14

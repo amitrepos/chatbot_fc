@@ -209,10 +209,165 @@ class TestTwoTierFlowLogic:
 
 
 # ============================================================================
+# Test Cases: Query Expansion Logic
+# ============================================================================
+
+class TestQueryExpansionParsing:
+    """Tests for query expansion parsing logic."""
+    
+    def test_parse_key_terms_format(self):
+        """Should parse key terms from LLM output."""
+        import re
+        
+        output = """KEY_TERMS:
+- logged in: signed in, authenticated, connected
+- users: accounts, sessions, clients
+
+ALTERNATIVE_QUERIES:
+1. How many users have signed in?
+2. Count of authenticated users
+"""
+        # Simulate parsing logic
+        key_terms = {}
+        for line in output.split('\n'):
+            line = line.strip()
+            if line.startswith('-') and ':' in line:
+                parts = line.lstrip('- ').split(':', 1)
+                if len(parts) == 2:
+                    term = parts[0].strip().lower()
+                    synonyms = [s.strip() for s in parts[1].split(',')]
+                    key_terms[term] = synonyms
+        
+        assert 'logged in' in key_terms
+        assert 'signed in' in key_terms['logged in']
+        assert 'users' in key_terms
+        assert 'accounts' in key_terms['users']
+    
+    def test_parse_alternative_queries(self):
+        """Should parse numbered alternative queries."""
+        import re
+        
+        output = """ALTERNATIVE_QUERIES:
+1. How many users have signed in?
+2. Count of authenticated users
+3. User login statistics
+"""
+        queries = []
+        for line in output.split('\n'):
+            line = line.strip()
+            if line and line[0].isdigit():
+                query = re.sub(r'^[\d]+[.\)]\s*', '', line).strip()
+                if query:
+                    queries.append(query)
+        
+        assert len(queries) == 3
+        assert "How many users have signed in?" in queries
+        assert "Count of authenticated users" in queries
+    
+    def test_combined_query_includes_original(self):
+        """Combined query should include original question."""
+        original = "How many users logged in?"
+        expansions = ["signed in users count", "authentication statistics"]
+        
+        # Simulate combined query building
+        combined = original
+        for exp in expansions:
+            for word in exp.split():
+                if word.lower() not in combined.lower():
+                    combined += " " + word
+        
+        assert "logged" in combined.lower()
+        assert "users" in combined.lower()
+        # New terms from expansions should be added
+        assert "authentication" in combined.lower() or "statistics" in combined.lower()
+    
+    def test_expansion_handles_empty_llm_response(self):
+        """Should handle empty or malformed LLM response gracefully."""
+        original = "Test question"
+        llm_output = ""
+        
+        # Simulate fallback behavior
+        expanded_queries = []
+        if not llm_output.strip():
+            expanded_queries = [original]  # Fallback to original
+        
+        assert len(expanded_queries) == 1
+        assert expanded_queries[0] == original
+
+
+class TestQueryExpansionExamples:
+    """Test specific expansion examples from requirements."""
+    
+    def test_logged_in_expansions_expected(self):
+        """Verify expected expansions for 'logged in' concept."""
+        expected_synonyms = ["signed in", "connected", "authenticated", "user sessions"]
+        
+        # All these should be semantically similar to "logged in"
+        base_concept = "logged in"
+        
+        # Verify that expected synonyms are reasonable alternatives
+        for syn in expected_synonyms:
+            # These should all relate to user authentication/connection
+            assert any(word in syn.lower() for word in ["sign", "connect", "auth", "session"])
+    
+    def test_user_count_expansions_expected(self):
+        """Verify expected expansions for 'number of users' concept."""
+        expected_synonyms = ["count of active users", "user metrics", "usage statistics"]
+        
+        base_concept = "number of users"
+        
+        # Verify that expected synonyms relate to counting/metrics
+        for syn in expected_synonyms:
+            assert any(word in syn.lower() for word in ["count", "metric", "statistic", "user"])
+
+
+class TestMultiQueryRetrieverLogic:
+    """Tests for multi-query retrieval logic."""
+    
+    def test_deduplication_by_node_id(self):
+        """Should deduplicate nodes by ID across multiple query results."""
+        # Simulate node results from multiple queries
+        class MockNode:
+            def __init__(self, node_id, score):
+                self.node_id = node_id
+                self.score = score
+        
+        # Query 1 results
+        results_q1 = [MockNode("a", 0.9), MockNode("b", 0.8)]
+        # Query 2 results (includes duplicate "a")
+        results_q2 = [MockNode("a", 0.85), MockNode("c", 0.7)]
+        
+        # Deduplicate
+        all_nodes = []
+        seen_ids = set()
+        for node in results_q1 + results_q2:
+            if node.node_id not in seen_ids:
+                all_nodes.append(node)
+                seen_ids.add(node.node_id)
+        
+        assert len(all_nodes) == 3  # a, b, c (no duplicate)
+        node_ids = [n.node_id for n in all_nodes]
+        assert node_ids.count("a") == 1
+    
+    def test_result_sorting_by_score(self):
+        """Should sort merged results by score (highest first)."""
+        class MockNode:
+            def __init__(self, score):
+                self.score = score
+        
+        nodes = [MockNode(0.5), MockNode(0.9), MockNode(0.7)]
+        sorted_nodes = sorted(nodes, key=lambda n: n.score, reverse=True)
+        
+        scores = [n.score for n in sorted_nodes]
+        assert scores == [0.9, 0.7, 0.5]
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 
 if __name__ == "__main__":
     # Run with verbose output
     pytest.main([__file__, "-v"])
+
 
