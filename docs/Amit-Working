@@ -8,3 +8,15 @@ postgresql://chatbot_user:chatbot_pass_004268c6de346074@localhost:5432/flexcube_
 ⚠️  Save this password! You'll need it for DATABASE_URL environment variable.
 
 --: dump_bash_state: command not found
+
+
+Next steps
+Log in at /login using:
+Username: admin
+Password: Admin123!
+Change the password after first login.
+Convert other users to admin:
+Go to /admin/users
+Click "Edit" on the user
+Change "User Type" to "Operational Admin"
+Click "Save"
