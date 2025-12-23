@@ -86,15 +86,17 @@ class FlexCubeDocumentLoader:
         logger.info(f"Loaded text file: {len(content)} characters")
         return [document]
     
-    def load_file(self, file_path: str) -> List[Document]:
+    def load_file(self, file_path: str, module: Optional[str] = None, submodule: Optional[str] = None) -> List[Document]:
         """
         Load a document file, automatically detecting the format.
         
         Args:
             file_path: Path to document file
+            module: Optional module name (unique module, e.g., "Loan", "Account")
+            submodule: Optional submodule name (NOT unique, can exist under different modules, e.g., "New")
             
         Returns:
-            List[Document]: List of Document objects
+            List[Document]: List of Document objects with module/submodule in metadata
         """
         path = Path(file_path)
         
@@ -103,14 +105,27 @@ class FlexCubeDocumentLoader:
         
         suffix = path.suffix.lower()
         
+        # Load documents based on file type
         if suffix == '.pdf':
-            return self.load_pdf(file_path)
+            documents = self.load_pdf(file_path)
         elif suffix == '.docx':
-            return self.load_docx(file_path)
+            documents = self.load_docx(file_path)
         elif suffix == '.txt':
-            return self.load_text(file_path)
+            documents = self.load_text(file_path)
         else:
             raise ValueError(f"Unsupported file format: {suffix}")
+        
+        # Add module/submodule to metadata for all documents
+        for doc in documents:
+            if module:
+                doc.metadata["module"] = module
+            if submodule:
+                doc.metadata["submodule"] = submodule
+            # Ensure source is set
+            if "source" not in doc.metadata:
+                doc.metadata["source"] = file_path
+        
+        return documents
     
     def load_directory(self, directory: Optional[str] = None) -> List[Document]:
         """
@@ -142,5 +157,7 @@ class FlexCubeDocumentLoader:
         
         logger.info(f"Loaded {len(all_documents)} total documents from directory")
         return all_documents
+
+
 
 

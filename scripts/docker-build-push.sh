@@ -121,3 +121,6 @@ echo "║     docker exec ollama ollama pull llava:7b                   ║"
 echo "╚════════════════════════════════════════════════════════════════╝${NC}"
 
 
+
+
+

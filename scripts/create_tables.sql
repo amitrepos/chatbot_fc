@@ -237,3 +237,6 @@ WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
 SELECT COUNT(*) AS total_permissions FROM permissions;
 SELECT COUNT(*) AS total_role_templates FROM role_templates;
 
+
+
+

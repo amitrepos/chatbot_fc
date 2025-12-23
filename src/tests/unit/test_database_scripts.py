@@ -64,3 +64,6 @@ class TestDatabaseScripts:
         assert 'operational_admin' in content, "Should contain operational_admin template"
         assert 'general_user' in content, "Should contain general_user template"
 
+
+
+

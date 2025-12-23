@@ -11,7 +11,7 @@ from loguru import logger
 
 from .models import (
     User, Permission, UserPermission, RoleTemplate, RoleTemplatePermission,
-    Session as SessionModel, Conversation, QAPair, Feedback
+    Session as SessionModel, Conversation, QAPair, Feedback, DocumentMetadata
 )
 
 
@@ -526,4 +526,269 @@ def delete_feedback(db: Session, feedback_id: int) -> bool:
         logger.info(f"Deleted feedback {feedback_id}")
         return True
     return False
+
+
+# ============================================================================
+# Document Metadata CRUD Operations
+# ============================================================================
+
+def create_document_metadata(
+    db: Session,
+    filename: str,
+    file_path: str,
+    module: Optional[str] = None,
+    submodule: Optional[str] = None,
+    uploaded_by: Optional[int] = None,
+    file_size: Optional[int] = None,
+    file_type: Optional[str] = None,
+    chunk_count: int = 0
+) -> DocumentMetadata:
+    """
+    Create document metadata record.
+    
+    Args:
+        db: Database session
+        filename: Original filename
+        file_path: Full path to document (must be unique)
+        module: Module name (unique module, e.g., "Loan", "Account")
+        submodule: Submodule name (NOT unique, can exist under different modules, e.g., "New")
+        uploaded_by: User ID who uploaded the document
+        file_size: File size in bytes
+        file_type: File type (pdf, docx, txt)
+        chunk_count: Number of chunks indexed
+        
+    Returns:
+        DocumentMetadata: Created document metadata record
+    """
+    metadata = DocumentMetadata(
+        filename=filename,
+        file_path=file_path,
+        module=module,
+        submodule=submodule,
+        uploaded_by=uploaded_by,
+        file_size=file_size,
+        file_type=file_type,
+        chunk_count=chunk_count
+    )
+    db.add(metadata)
+    db.commit()
+    db.refresh(metadata)
+    logger.info(f"Created document metadata: {filename} (module={module}, submodule={submodule})")
+    return metadata
+
+
+def get_document_metadata(db: Session, file_path: str) -> Optional[DocumentMetadata]:
+    """
+    Get document metadata by file path.
+    
+    Args:
+        db: Database session
+        file_path: Full path to document
+        
+    Returns:
+        DocumentMetadata: Document metadata if found, None otherwise
+    """
+    return db.query(DocumentMetadata).filter(DocumentMetadata.file_path == file_path).first()
+
+
+def get_document_metadata_by_file_path(db: Session, file_path: str) -> Optional[DocumentMetadata]:
+    """Get document metadata by file path (alias for get_document_metadata)."""
+    return get_document_metadata(db, file_path)
+
+
+def get_document_metadata_by_id(db: Session, document_id: int) -> Optional[DocumentMetadata]:
+    """Get document metadata by ID."""
+    return db.query(DocumentMetadata).filter(DocumentMetadata.id == document_id).first()
+
+
+def get_all_document_metadata(
+    db: Session,
+    module: Optional[str] = None,
+    submodule: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100
+) -> List[DocumentMetadata]:
+    """Get all document metadata, with optional filtering by module and submodule."""
+    query = db.query(DocumentMetadata)
+    if module:
+        query = query.filter(DocumentMetadata.module == module)
+    if submodule:
+        query = query.filter(DocumentMetadata.submodule == submodule)
+    return query.offset(skip).limit(limit).all()
+
+
+def get_user_accessible_documents(
+    db: Session,
+    user_id: int,
+    user_type: str,
+    module: Optional[str] = None,
+    submodule: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100
+) -> List[DocumentMetadata]:
+    """
+    Get documents accessible to a user based on ownership.
+    
+    - Admin users (operational_admin): See ALL documents
+    - General users: See only documents they uploaded (uploaded_by = user_id)
+    
+    Args:
+        db: Database session
+        user_id: Current user's ID
+        user_type: Current user's type (operational_admin or general_user)
+        module: Optional module filter
+        submodule: Optional submodule filter
+        skip: Pagination offset
+        limit: Pagination limit
+        
+    Returns:
+        List of DocumentMetadata records accessible to the user
+    """
+    from src.auth.permissions import is_operational_admin
+    
+    # Start with base query
+    query = db.query(DocumentMetadata)
+    
+    # Apply ownership filter for non-admin users
+    if not is_operational_admin(user_type):
+        # General users can only see documents they uploaded
+        query = query.filter(DocumentMetadata.uploaded_by == user_id)
+    # Admin users see all documents (no ownership filter)
+    
+    # Apply optional module filter
+    if module:
+        query = query.filter(DocumentMetadata.module == module)
+    
+    # Apply optional submodule filter
+    if submodule:
+        query = query.filter(DocumentMetadata.submodule == submodule)
+    
+    # Apply pagination
+    return query.offset(skip).limit(limit).all()
+
+
+def can_user_access_document(
+    db: Session,
+    user_id: int,
+    user_type: str,
+    document_id: int
+) -> bool:
+    """
+    Check if user can access a specific document.
+    
+    - Admin users: Can access any document
+    - General users: Can only access documents they uploaded
+    
+    Args:
+        db: Database session
+        user_id: Current user's ID
+        user_type: Current user's type (operational_admin or general_user)
+        document_id: Document ID to check access for
+        
+    Returns:
+        bool: True if user can access the document, False otherwise
+    """
+    from src.auth.permissions import is_operational_admin
+    from .models import DocumentMetadata
+    
+    # Admin users can access any document
+    if is_operational_admin(user_type):
+        return True
+    
+    # General users can only access documents they uploaded
+    document = db.query(DocumentMetadata).filter(
+        DocumentMetadata.id == document_id
+    ).first()
+    
+    if not document:
+        return False
+    
+    return document.uploaded_by == user_id
+
+
+def delete_document_metadata(db: Session, document_id: int) -> bool:
+    """Delete document metadata by ID."""
+    db_metadata = get_document_metadata_by_id(db, document_id)
+    if db_metadata:
+        db.delete(db_metadata)
+        db.commit()
+        logger.info(f"Deleted document metadata {document_id}")
+        return True
+    return False
+
+
+def get_distinct_modules(db: Session) -> List[str]:
+    """
+    Get all distinct module names from existing documents.
+    
+    Modules are unique - returns list of unique module names.
+    
+    Args:
+        db: Database session
+        
+    Returns:
+        List[str]: Sorted list of distinct module names
+    """
+    result = db.query(DocumentMetadata.module).filter(
+        DocumentMetadata.module.isnot(None)
+    ).distinct().all()
+    modules = [row[0] for row in result if row[0]]
+    return sorted(modules)
+
+
+def get_distinct_submodules(db: Session, module: Optional[str] = None) -> List[str]:
+    """
+    Get all distinct submodule names, optionally filtered by module.
+    
+    Submodules are NOT unique - same name can exist under different modules.
+    When module is provided, returns only submodules for that unique module.
+    
+    Args:
+        db: Database session
+        module: Optional unique module name to filter by
+        
+    Returns:
+        List[str]: Sorted list of distinct submodule names
+    """
+    query = db.query(DocumentMetadata.submodule).filter(
+        DocumentMetadata.submodule.isnot(None)
+    )
+    
+    if module:
+        # Filter by unique module - returns submodules only for that module
+        query = query.filter(DocumentMetadata.module == module)
+    
+    result = query.distinct().all()
+    submodules = [row[0] for row in result if row[0]]
+    return sorted(submodules)
+
+
+def update_document_metadata(
+    db: Session,
+    file_path: str,
+    module: Optional[str] = None,
+    submodule: Optional[str] = None
+) -> Optional[DocumentMetadata]:
+    """
+    Update module/submodule for a document.
+    
+    Args:
+        db: Database session
+        file_path: Full path to document
+        module: New module name (optional)
+        submodule: New submodule name (optional)
+        
+    Returns:
+        DocumentMetadata: Updated document metadata if found, None otherwise
+    """
+    metadata = get_document_metadata(db, file_path)
+    if metadata:
+        if module is not None:
+            metadata.module = module
+        if submodule is not None:
+            metadata.submodule = submodule
+        db.commit()
+        db.refresh(metadata)
+        logger.info(f"Updated document metadata: {file_path} (module={module}, submodule={submodule})")
+    return metadata
 

@@ -1,5 +1,444 @@
 # Updates Log
 
+## 2025-12-23 - Document Ownership Update
+
+**Timestamp:** 2025-12-23 16:41:00
+
+**Action:** Updated all existing documents to be owned by admin user
+
+**Changes Made:**
+- Updated all 4 documents in `document_metadata` table to have `uploaded_by = 60` (admin user)
+- Previously, documents were owned by different users (some by admin, one by amitkumarmishra@gmail.com)
+- Now all documents are consistently owned by the admin user
+
+**Documents Updated:**
+- `.placeholder_LOAN_New.txt`
+- `.placeholder_LOAN_Modify.txt`
+- `Omokai First add.docx`
+- `.placeholder_LOAN.txt`
+
+**Reason:** There is no "system" user, so all documents should be owned by the admin user for consistency.
+
+**Verification:** All documents verified to be owned by admin user (ID: 60)
+
+---
+
+## 2025-01-27 - Document Edit Implementation: Step 1 Complete
+
+**Timestamp:** 2025-01-27
+
+**Action:** Completed Step 1 - Updated GET `/api/documents` endpoint to return metadata from database
+
+**Changes Made:**
+1. **Enhanced GET `/api/documents` Endpoint:**
+   - Modified to fetch documents from `document_metadata` database table instead of filesystem scan only
+   - Added authentication requirement (`get_current_user` dependency)
+   - Added permission check (`view_documents` permission required)
+   - Returns comprehensive metadata including:
+     - `id`: Document ID from database
+     - `filename`: Original filename
+     - `file_path`: Full file path
+     - `module`: Module name (if categorized)
+     - `submodule`: Submodule name (if categorized)
+     - `size`: File size in bytes (from filesystem for accuracy)
+     - `chunks`: Number of indexed chunks
+     - `uploaded_at`: Upload timestamp (ISO format)
+     - `file_type`: File extension (pdf, docx, txt)
+   - Maintains backward compatibility: Documents that exist in filesystem but not in database are still returned (with null metadata)
+   - Documents sorted by filename for consistent ordering
+
+**Implementation Details:**
+- Uses `get_all_document_metadata()` CRUD function to fetch from database
+- Creates file_path map for quick lookup to avoid duplicates
+- Checks filesystem for documents not in database (backward compatibility)
+- Uses filesystem file size (more accurate than stored size)
+- Handles missing files gracefully (uses stored size if file doesn't exist)
+
+**Files Modified:**
+- `src/api/main.py`: Updated `list_documents()` endpoint (lines 2191-2280)
+
+**Response Format:**
+```json
+{
+  "documents": [
+    {
+      "id": 1,
+      "filename": "document.pdf",
+      "file_path": "/var/www/chatbot_FC/data/documents/document.pdf",
+      "module": "Loan",
+      "submodule": "New",
+      "size": 1024000,
+      "chunks": 50,
+      "uploaded_at": "2024-01-15T10:30:00Z",
+      "file_type": "pdf"
+    }
+  ],
+  "total": 1,
+  "total_chunks": 394
+}
+```
+
+**Testing Status:** Ready for verification
+- ✅ No linting errors
+- ✅ Code follows existing patterns
+- ✅ Backward compatibility maintained
+- ⏳ Needs user verification via API test
+
+**Next Step:** Step 2 - Create PUT `/api/documents/{document_id}/metadata` endpoint
+
+---
+
+## 2025-01-27 - Document Edit Implementation: Step 2 Complete
+
+**Timestamp:** 2025-01-27
+
+**Action:** Completed Step 2 - Created PUT `/api/documents/{document_id}/metadata` endpoint (user-facing)
+
+**Changes Made:**
+1. **New PUT `/api/documents/{document_id}/metadata` Endpoint:**
+   - Allows authenticated users to update document metadata (module/submodule)
+   - Requires `upload_documents` permission (same as upload endpoint)
+   - Takes `document_id` as path parameter
+   - Accepts `DocumentMetadataUpdateRequest` body with optional `module` and `submodule` fields
+   - Returns updated `DocumentMetadataResponse` with all document metadata
+   - Uses existing CRUD functions: `get_document_metadata_by_id()` and `update_document_metadata()`
+   - Includes proper error handling (404 for not found, 500 for update failures)
+   - Logs update operations for audit trail
+
+**Implementation Details:**
+- Reuses existing `DocumentMetadataUpdateRequest` model (already defined)
+- Reuses existing `DocumentMetadataResponse` model (already defined)
+- Follows same pattern as admin endpoint but with user permission
+- Updates metadata using file_path (as required by CRUD function)
+- Returns full document metadata including uploader information
+
+**Request Format:**
+```json
+PUT /api/documents/1/metadata
+{
+  "module": "Loan",
+  "submodule": "New"
+}
+```
+
+**Response Format:**
+```json
+{
+  "id": 1,
+  "filename": "document.pdf",
+  "file_path": "/var/www/chatbot_FC/data/documents/document.pdf",
+  "module": "Loan",
+  "submodule": "New",
+  "uploaded_by": 1,
+  "uploaded_at": "2024-01-15T10:30:00Z",
+  "last_indexed_at": "2024-01-15T10:35:00Z",
+  "chunk_count": 50,
+  "file_size": 1024000,
+  "file_type": "pdf",
+  "uploader_username": "admin"
+}
+```
+
+**Files Modified:**
+- `src/api/main.py`: Added `update_document_metadata()` endpoint (lines 2283-2346)
+
+**Security:**
+- ✅ Requires authentication (`get_current_user` dependency)
+- ✅ Requires `upload_documents` permission
+- ✅ Validates document exists before updating
+- ✅ Logs update operations with user info
+
+**Testing Status:** Ready for verification
+- ✅ No linting errors
+- ✅ Follows existing code patterns
+- ✅ Reuses existing models and CRUD functions
+- ⏳ Needs user verification via API test
+
+**Next Step:** Phase 2 - Frontend UI enhancements (display module/submodule, add edit button, create edit modal)
+
+---
+
+## 2025-01-27 - Document Edit Implementation: Frontend Complete
+
+**Timestamp:** 2025-01-27
+
+**Action:** Completed Frontend UI enhancements - Added module/submodule display and edit functionality
+
+**Changes Made:**
+
+1. **Document List Display Updates:**
+   - Added CSS styling for module and submodule tags (`.module-tag`, `.submodule-tag`)
+   - Updated `loadDocuments()` function to display module/submodule information for each document
+   - Shows colored tags: purple for module, darker purple for submodule
+   - Displays "Not categorized" text if no module/submodule assigned
+   - Added `.document-actions` CSS class for button grouping
+
+2. **Edit Button:**
+   - Added "Edit" button next to "Delete" button for each document
+   - Only shown for documents that exist in database (have an ID)
+   - Uses existing `secondary` button class styling
+
+3. **Edit Modal:**
+   - Created modal HTML structure with overlay
+   - Modal includes form with module and submodule dropdowns
+   - Pre-populates current module/submodule values
+   - Includes Cancel and Save buttons
+   - Closes when clicking outside modal or on Cancel button
+
+4. **JavaScript Functions:**
+   - `editDocument(documentId)` - Opens modal, fetches document data, populates form
+   - `closeEditModal()` - Closes the edit modal
+   - `loadModulesForEdit()` - Loads modules for edit dropdown
+   - `loadSubmodulesForEditModule(module)` - Loads submodules filtered by selected module
+   - `saveDocumentMetadata(documentId)` - Sends PUT request to update metadata, shows success message
+   - Added click-outside handler to close modal
+
+**UI Features:**
+- Module tags: Blue background (#667eea) with white text
+- Submodule tags: Purple background (#764ba2) with white text
+- Edit button appears between document info and Delete button
+- Modal has clean, modern design matching existing UI
+- Success message appears after successful update (disappears after 3 seconds)
+- Document list automatically refreshes after update
+
+**Files Modified:**
+- `src/api/main.py`: 
+  - Added CSS for module/submodule tags (lines ~1085-1105)
+  - Updated `loadDocuments()` function (lines ~1685-1720)
+  - Added edit modal HTML (lines ~1234-1250)
+  - Added JavaScript functions for editing (lines ~1755-1900)
+  - Added modal close handler (line ~1520)
+
+**User Experience:**
+1. User sees module/submodule tags next to each document in the list
+2. User clicks "Edit" button on a document
+3. Modal opens with current module/submodule pre-selected
+4. User changes module/submodule selections
+5. User clicks "Save Changes"
+6. Changes saved to database via API
+7. Document list refreshes to show updated metadata
+8. Success message appears briefly
+
+**Testing Status:** Ready for verification
+- ✅ No linting errors
+- ✅ Follows existing UI patterns
+- ✅ Integrates with existing API endpoints
+- ⏳ Needs user verification in browser
+
+---
+
+## 2025-01-27 - Document Edit & Module/Submodule Mapping Plan
+
+**Timestamp:** 2025-01-27
+
+**Action:** Created comprehensive implementation plan for document editing functionality
+
+**Plan Document Created:**
+- `docs/DOCUMENT_EDIT_PLAN.md` - Complete plan for adding document edit functionality
+
+**Overview:**
+This plan outlines the implementation of document editing functionality that allows users to update module and submodule mappings for uploaded documents directly from the document upload section. Users will be able to edit and update the module/submodule categorization for any document that has been uploaded.
+
+**Key Features Planned:**
+1. Enhanced GET `/api/documents` endpoint to return metadata from database (module/submodule)
+2. New PUT `/api/documents/{document_id}/metadata` endpoint for users to update document metadata
+3. Frontend UI enhancements to display module/submodule in document list
+4. Edit modal with dropdowns for module/submodule selection
+5. Save functionality to update database
+
+**Implementation Phases:**
+- Phase 1: Backend API Enhancements (2-3 hours)
+- Phase 2: Frontend UI Enhancements (4-5 hours)
+- Phase 3: Optional Enhancements (document reindexing, audit trail)
+
+**Estimated Total Time:** 8-10 hours
+
+**Files Created:**
+- `docs/DOCUMENT_EDIT_PLAN.md` - Comprehensive implementation plan with detailed steps, API specifications, UI mockups, and testing checklist
+
+**Status:** Plan created and ready for review before implementation
+
+---
+
+## 2025-12-23 - Document Ownership-Based Visibility Implementation Complete
+
+**Timestamp:** 2025-12-23 16:30:00
+
+**Action:** Implemented complete document ownership-based visibility feature
+
+**Context:**
+- User requirement: Documents should be visible based on ownership
+  - Admin users: See ALL documents
+  - General users: See only documents they uploaded
+- Existing documents need to be marked as admin-owned
+
+**Implementation Complete - All Phases:**
+
+### Phase 1: Database Migration ✅
+- Created `scripts/migrate_existing_documents_to_admin.py`
+- Script assigns all documents with NULL `uploaded_by` to admin user
+- Idempotent (safe to run multiple times)
+- Tested and verified working
+
+### Phase 2: Database CRUD Functions ✅
+- Added `get_user_accessible_documents()` to `src/database/crud.py`
+  - Admin users: Returns all documents
+  - General users: Returns only documents they uploaded
+  - Supports module/submodule filtering and pagination
+- Added `can_user_access_document()` to `src/database/crud.py`
+  - Checks if user can access a specific document
+  - Admin users: Always returns True
+  - General users: Returns True only if they uploaded the document
+
+### Phase 3: API Endpoints ✅
+- Updated `GET /api/documents`:
+  - Now uses `get_user_accessible_documents()` instead of `get_all_document_metadata()`
+  - Filters documents by ownership (admin sees all, users see only their own)
+  - Returns `uploaded_by` and `uploader_username` in response
+  - Filesystem documents only shown to admin users (backward compatibility)
+- Updated `DELETE /api/documents/{filename}`:
+  - Added authentication requirement
+  - Added ownership check using `can_user_access_document()`
+  - Returns 403 Forbidden if user tries to delete document they don't own (unless admin)
+  - Deletes from both database and filesystem
+
+### Phase 4: Frontend Updates ✅
+- Updated `loadDocuments()` JavaScript function:
+  - Now sends authentication token in request headers
+  - Displays ownership information: "Uploaded by: You" or "Uploaded by: {username}"
+  - Handles 401 unauthorized responses (redirects to login)
+- Updated `deleteDocument()` JavaScript function:
+  - Now sends authentication token in request headers
+  - Handles 403 Forbidden responses with user-friendly error messages
+  - Shows specific error message when user tries to delete document they don't own
+
+### Phase 5: Testing ✅
+- Created `src/tests/integration/test_document_ownership.py`
+- Comprehensive test coverage:
+  - CRUD function tests (admin sees all, users see only own)
+  - API endpoint tests (list and delete operations)
+  - Ownership validation tests
+  - Permission denial tests
+
+**Files Created:**
+- `scripts/migrate_existing_documents_to_admin.py` - Migration script
+- `src/tests/integration/test_document_ownership.py` - Integration tests
+- `docs/DOCUMENT_OWNERSHIP_VISIBILITY_PLAN.md` - Implementation plan
+
+**Files Modified:**
+- `src/database/crud.py` - Added ownership filtering functions
+- `src/api/main.py` - Updated API endpoints and frontend JavaScript
+
+**Key Features:**
+- ✅ Admin users can see and delete all documents
+- ✅ General users can only see and delete documents they uploaded
+- ✅ Ownership information displayed in UI
+- ✅ Proper error handling and user feedback
+- ✅ Backward compatibility maintained
+- ✅ All existing documents marked as admin-owned via migration
+
+**Security:**
+- Ownership checks enforced at API level (server-side)
+- Frontend changes are for UX only
+- Proper authentication and authorization on all endpoints
+
+**Status:** ✅ Implementation complete and tested
+
+## 2025-01-XX - Cursor PDF Viewer Setup
+
+**Timestamp:** 2025-01-XX
+
+**Action:** Added solutions for viewing PDFs properly in Cursor IDE
+
+**Problem:**
+- PDFs opened in Cursor display as raw binary/ASCII data instead of visual content
+- Cursor IDE doesn't have built-in PDF viewer like it does for images
+
+**Solutions Provided:**
+
+1. **PDF Reader MCP Server (Recommended)**
+   - Created setup guide: `docs/CURSOR_PDF_VIEWER_SETUP.md`
+   - Created installation script: `scripts/setup_pdf_mcp_server.sh`
+   - MCP (Model Context Protocol) server integrates with Cursor
+   - Enables proper PDF reading and text extraction within Cursor
+   - Configuration instructions included
+
+2. **PDF to Images Converter (Alternative)**
+   - Created script: `scripts/pdf_to_images_viewer.py`
+   - Converts PDF pages to PNG images
+   - Cursor can display images properly, so this provides a workaround
+   - Supports custom output directories and DPI settings
+   - Usage: `python scripts/pdf_to_images_viewer.py "path/to/file.pdf"`
+
+**Files Created:**
+- `docs/CURSOR_PDF_VIEWER_SETUP.md` - Complete setup guide with all solutions
+- `scripts/pdf_to_images_viewer.py` - PDF to PNG converter script
+- `scripts/setup_pdf_mcp_server.sh` - Automated MCP server setup script
+
+**Usage:**
+```bash
+# Option 1: Setup MCP Server (recommended for long-term use)
+bash scripts/setup_pdf_mcp_server.sh
+
+# Option 2: Convert PDF to images (quick solution)
+python scripts/pdf_to_images_viewer.py "data/documents/file.pdf"
+```
+
+**Benefits:**
+- MCP Server: Seamless integration, works automatically with Cursor
+- Image Converter: Simple, no configuration needed, works immediately
+- Both solutions allow proper viewing of PDF content in Cursor IDE
+
+## 2025-01-XX - PDF Image Extraction Page Matching Fix
+
+**Timestamp:** 2025-01-XX
+
+**Action:** Fixed PDF image extraction to correctly match images to pages based on content, not just object location
+
+**Problem Identified:**
+- Screenshots extracted from PDF were reported as being from "Page 1" (Table of Contents)
+- But images actually showed Media Maintenance screens which appear on Page 2
+- Root cause: PDF has unusual structure where same 40 images are stored on both Page 1 and Page 2
+- PyMuPDF reports images based on where image objects are stored, not where they visually appear
+
+**Solution Implemented:**
+1. **New Function**: `find_best_matching_page()` in `process_pdf_images_incremental.py`
+   - Analyzes LLaVA description of the image
+   - Extracts Function IDs and keywords (e.g., "MEDIA MAINTENANCE", "MSDMEDMT")
+   - Searches surrounding pages (±2 pages) for matching text content
+   - Returns page number with best content match
+
+2. **Updated Extraction Flow**:
+   - Extract images from PDF (as before)
+   - Get LLaVA description of image
+   - Extract Function ID from description
+   - **NEW**: Match image to correct page based on text content
+   - Use matched page number for output and context
+
+**Technical Details:**
+- Function searches for keywords in page text
+- Scores pages based on keyword matches (Function ID matches get +10 points)
+- Updates page number if better match found
+- Logs page corrections for transparency
+
+**Files Modified:**
+- `scripts/process_pdf_images_incremental.py`: Added `find_best_matching_page()` function and integrated into processing loop
+
+**Documentation Created:**
+- `data/documents/PDF_EXTRACTION_ISSUE_ANALYSIS.md`: Detailed analysis of the problem
+- `data/documents/PDF_EXTRACTION_FIX_SUMMARY.md`: Summary of solution and testing steps
+
+**Expected Results:**
+- Before: Screenshots labeled as "Page 1" with Table of Contents context
+- After: Screenshots labeled as "Page 2" with Media Maintenance context ✅
+
+**Next Steps:**
+1. Test fix with 2-page PDF extract
+2. Re-extract all images from full PDF if successful
+3. Consider applying same fix to `process_pdf_images.py` (non-incremental version)
+
+---
+
 ## 2025-12-17 - Step 6 Progress & Comprehensive Authentication Tests
 
 **Timestamp:** 2025-12-17 21:10:00
@@ -738,4 +1177,84 @@ Better Semantic Matches Retrieved
    - Option C: Parallel work (efficient, 4-6 hours)
 
 **Next Action:** Review NEXT_STEPS_ANALYSIS.md for detailed recommendations.
+
+---
+
+## 2025-01-17 - Module/Submodule Filtering: Test Cases Written (TDD)
+
+**Timestamp:** 2025-01-17
+
+**Action:** Created comprehensive test suite for module/submodule filtering feature following Test-Driven Development (TDD) approach.
+
+**Test Files Created (44 tests, ~1600 lines of test code):**
+
+1. **Unit Tests:**
+   - `src/tests/unit/test_document_metadata.py` (189 lines, 5 tests)
+     - DocumentMetadata model tests
+     - Model creation, relationships, constraints
+   - `src/tests/unit/test_module_crud.py` (405 lines, 11 tests)
+     - CRUD operations tests
+     - Distinct module/submodule queries
+     - Update operations
+
+2. **Integration Tests:**
+   - `src/tests/integration/test_module_api_endpoints.py` (541 lines, 18 tests)
+     - Document upload with module/submodule
+     - Query filtering endpoints
+     - Module/submodule list endpoints
+     - Admin module management endpoints
+   - `src/tests/integration/test_module_filtering_rag.py` (239 lines, 5 tests)
+     - RAG pipeline indexing with module/submodule
+     - Query filtering in RAG pipeline
+     - Backward compatibility tests
+   - `src/tests/integration/test_module_ui_workflows.py` (226 lines, 5 tests)
+     - UI workflow tests
+     - Admin UI tests
+
+**Key Constraints Reflected in Tests:**
+- ✅ **Module names ARE unique** - Each module is unique (e.g., "Loan", "Account")
+- ✅ **Submodule names are NOT unique** - Same submodule name can exist under different modules (e.g., "New" under "Loan" and "Account")
+- ✅ **Module + Submodule combination IS unique** - Each document has one unique module+submodule pair
+
+**Test Scenarios Covered:**
+- Creating document metadata with/without module/submodule
+- Getting distinct modules (unique modules)
+- Getting distinct submodules (non-unique names, filtered by module)
+- Query filtering by module alone (returns all docs with that unique module)
+- Query filtering by module+submodule (returns only exact unique combination)
+- Backward compatibility (all existing functionality continues to work)
+- Admin module/submodule management
+- UI workflows
+
+**Documentation Created:**
+- `docs/MODULE_SUBMODULE_FILTERING_PLAN.md` - Complete implementation plan
+- `docs/MODULE_SUBMODULE_TEST_PLAN.md` - Comprehensive test plan
+- `docs/MODULE_SUBMODULE_TEST_EXECUTION.md` - Test execution guide
+
+**TDD Status:**
+- ✅ **Phase 1: Tests Written** - All 44 tests ready to run
+- ⏳ **Phase 2: Database Layer** - Not implemented yet (tests will fail)
+- ⏳ **Phase 3: RAG Pipeline** - Not implemented yet (tests will fail)
+- ⏳ **Phase 4: API Endpoints** - Not implemented yet (tests will fail)
+- ⏳ **Phase 5: Frontend UI** - Not implemented yet (tests will fail)
+
+**Next Steps:**
+1. Run tests to verify they fail (red phase in TDD)
+2. Implement database layer (document_metadata table, model, CRUD)
+3. Implement RAG pipeline filtering
+4. Implement API endpoints
+5. Implement frontend UI
+6. Verify all tests pass (green phase)
+
+**Files Created:**
+- `src/tests/unit/test_document_metadata.py`
+- `src/tests/unit/test_module_crud.py`
+- `src/tests/integration/test_module_api_endpoints.py`
+- `src/tests/integration/test_module_filtering_rag.py`
+- `src/tests/integration/test_module_ui_workflows.py`
+- `docs/MODULE_SUBMODULE_TEST_EXECUTION.md`
+
+**Total Test Code:** ~1600 lines
+**Total Tests:** 44 tests
+**Test Coverage Goal:** >90% for new code
 

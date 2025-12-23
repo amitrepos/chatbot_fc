@@ -71,3 +71,6 @@ sudo -u postgres /var/www/chatbot_FC/venv/bin/python -m pytest src/tests/integra
 
 Step 1 is complete. Ready to proceed with Step 2: Authentication & RBAC Module.
 
+
+
+

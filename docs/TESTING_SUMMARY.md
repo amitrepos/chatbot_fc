@@ -127,3 +127,6 @@ pip install selenium webdriver-manager
 3. **Add more E2E tests** for additional user flows
 4. **Integrate into CI/CD** pipeline
 
+
+
+

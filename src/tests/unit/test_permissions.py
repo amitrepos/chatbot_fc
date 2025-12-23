@@ -108,3 +108,6 @@ class TestPermissionFiltering:
         assert "delete_documents" in doc_perms
         assert "view_chat" not in doc_perms
 
+
+
+

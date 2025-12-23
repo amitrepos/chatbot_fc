@@ -5,7 +5,7 @@ This module defines all database models using SQLAlchemy ORM.
 Models correspond to the database schema created in Step 1.
 """
 
-from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey, DECIMAL, JSON, and_
+from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey, DECIMAL, JSON, BigInteger, and_
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -245,4 +245,31 @@ class TrainingDataExport(Base):
     total_feedback = Column(Integer)
     export_status = Column(String(20), index=True)  # pending, completed, failed
     file_path = Column(String(500))
+
+
+class DocumentMetadata(Base):
+    """
+    Document metadata model for tracking document categorization.
+    
+    Stores module and submodule as simple strings (denormalized).
+    - Module names ARE unique (e.g., "Loan", "Account", "Transaction")
+    - Submodule names are NOT unique (same name can exist under different modules)
+    - Module + Submodule combination IS unique (each document has one unique pair)
+    """
+    __tablename__ = "document_metadata"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(500), nullable=False)
+    file_path = Column(Text, unique=True, nullable=False, index=True)
+    module = Column(String(100), index=True)  # Simple string, e.g., "Loan" (unique module)
+    submodule = Column(String(100), index=True)  # Simple string, e.g., "New" (NOT unique, can exist under different modules)
+    uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    last_indexed_at = Column(DateTime(timezone=True))
+    chunk_count = Column(Integer, default=0)
+    file_size = Column(BigInteger)
+    file_type = Column(String(20))
+    
+    # Relationship
+    user = relationship("User", foreign_keys=[uploaded_by])
 

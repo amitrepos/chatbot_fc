@@ -289,3 +289,6 @@ CREATE INDEX idx_qa_pairs_answer_fts ON qa_pairs
 
 **PostgreSQL is the right choice** for your use case. It will handle your data efficiently, provide excellent query capabilities, and scale well. Only consider hybrid approach if you exceed 10 million Q&A pairs or need frequent archiving.
 
+
+
+

@@ -7,7 +7,7 @@ Main FastAPI application with endpoints for:
 - Health checks
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, status, Response, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, status, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -120,6 +120,8 @@ class QueryRequest(BaseModel):
     """Query request model."""
     question: str
     top_k: Optional[int] = 5
+    module: Optional[str] = None  # Optional module filter (unique module, e.g., "Loan", "Account")
+    submodule: Optional[str] = None  # Optional submodule filter (NOT unique, but combined with module creates unique filter)
 
 
 class QueryResponse(BaseModel):
@@ -296,6 +298,65 @@ class TrainingDataExportRequest(BaseModel):
     """Training data export request."""
     format: str = "json"  # json or csv
     include_feedback: bool = True
+
+
+class DocumentMetadataResponse(BaseModel):
+    """Document metadata response."""
+    id: int
+    filename: str
+    file_path: str
+    module: Optional[str] = None
+    submodule: Optional[str] = None
+    uploaded_by: Optional[int] = None
+    uploaded_at: datetime
+    last_indexed_at: Optional[datetime] = None
+    chunk_count: int
+    file_size: int
+    file_type: Optional[str] = None
+    uploader_username: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class DocumentMetadataListResponse(BaseModel):
+    """List of document metadata response."""
+    documents: List[DocumentMetadataResponse]
+    total: int
+
+
+class DocumentMetadataUpdateRequest(BaseModel):
+    """Document metadata update request."""
+    module: Optional[str] = None
+    submodule: Optional[str] = None
+
+
+class CreateModuleRequest(BaseModel):
+    """Request to create a new module."""
+    name: str
+
+
+class CreateSubmoduleRequest(BaseModel):
+    """Request to create a new submodule."""
+    module: str
+    submodule: str
+
+
+class RenameModuleRequest(BaseModel):
+    """Request to rename a module."""
+    old_name: str
+    new_name: str
+
+
+class DeleteModuleRequest(BaseModel):
+    """Request to delete a module."""
+    name: str
+
+
+class DeleteSubmoduleRequest(BaseModel):
+    """Request to delete a submodule."""
+    module: str
+    submodule: str
 
 
 # Endpoints
@@ -1021,6 +1082,31 @@ async def root():
                 color: #6c757d;
                 margin-top: 5px;
             }
+            .module-tag {
+                display: inline-block;
+                background: #667eea;
+                color: white;
+                padding: 2px 8px;
+                border-radius: 4px;
+                font-size: 11px;
+                margin-left: 8px;
+                font-weight: 500;
+            }
+            .submodule-tag {
+                display: inline-block;
+                background: #764ba2;
+                color: white;
+                padding: 2px 8px;
+                border-radius: 4px;
+                font-size: 11px;
+                margin-left: 4px;
+                font-weight: 500;
+            }
+            .document-actions {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+            }
             .progress-bar {
                 width: 100%;
                 height: 8px;
@@ -1082,6 +1168,20 @@ async def root():
                 <div class="query-section">
                     <label for="question"><strong>Your Question:</strong></label>
                     <textarea id="question" placeholder="e.g., How do I handle ERR_ACC_NOT_FOUND error?"></textarea>
+                    <div style="margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div>
+                            <label for="queryModule" style="display: block; font-weight: 600; margin-bottom: 8px; color: #495057;">Filter by Module (Optional):</label>
+                            <select id="queryModule" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 14px;" onchange="loadSubmodulesForModule(this.value)">
+                                <option value="">-- All Modules --</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="querySubmodule" style="display: block; font-weight: 600; margin-bottom: 8px; color: #495057;">Filter by Submodule (Optional):</label>
+                            <select id="querySubmodule" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 14px;">
+                                <option value="">-- All Submodules --</option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="button-group">
                         <button onclick="askQuestion()" id="askBtn">Ask Question</button>
                         <button class="secondary" onclick="clearCurrentAnswer()">Clear</button>
@@ -1124,6 +1224,20 @@ async def root():
                         <p style="color: #6c757d; font-size: 14px;">Supports: PDF, DOCX, TXT</p>
                     </div>
                     <input type="file" id="docInput" accept=".pdf,.docx,.txt" style="display: none;" onchange="handleDocumentSelect(event)">
+                    <div style="margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div>
+                            <label for="uploadModule" style="display: block; font-weight: 600; margin-bottom: 8px; color: #495057;">Module (Optional):</label>
+                            <select id="uploadModule" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 14px;">
+                                <option value="">-- Select Module --</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="uploadSubmodule" style="display: block; font-weight: 600; margin-bottom: 8px; color: #495057;">Submodule (Optional):</label>
+                            <select id="uploadSubmodule" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 14px;">
+                                <option value="">-- Select Submodule --</option>
+                            </select>
+                        </div>
+                    </div>
                     <div id="uploadProgress" class="hidden">
                         <div class="progress-bar">
                             <div class="progress-fill" id="progressFill" style="width: 0%"></div>
@@ -1139,6 +1253,41 @@ async def root():
                 </div>
             </div>
         </div>
+        
+        <!-- Edit Document Modal -->
+        <div id="editDocumentModal" class="modal" style="display: none;">
+            <div class="modal-content" style="max-width: 600px; margin: 50px auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0; color: #495057;">Edit Document Metadata</h2>
+                    <button onclick="closeEditModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">&times;</button>
+                </div>
+                <div id="editDocumentContent">
+                    <p style="color: #6c757d; margin-bottom: 20px;">Loading document information...</p>
+                </div>
+            </div>
+        </div>
+        
+        <style>
+            .modal {
+                display: none;
+                position: fixed;
+                z-index: 1000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0,0,0,0.5);
+                overflow: auto;
+            }
+            .modal-content {
+                position: relative;
+                background-color: white;
+                margin: 5% auto;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            }
+        </style>
         
         <script>
             // Global state
@@ -1288,6 +1437,72 @@ async def root():
                 return div.innerHTML;
             }
             
+            // Load modules and submodules for dropdowns
+            async function loadModules() {
+                try {
+                    const response = await fetch('/api/modules', {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        const modules = data.modules || [];
+                        const uploadModuleSelect = document.getElementById('uploadModule');
+                        const queryModuleSelect = document.getElementById('queryModule');
+                        
+                        // Clear existing options (except first)
+                        uploadModuleSelect.innerHTML = '<option value="">-- Select Module --</option>';
+                        queryModuleSelect.innerHTML = '<option value="">-- All Modules --</option>';
+                        
+                        // Add modules
+                        modules.forEach(module => {
+                            const uploadOption = document.createElement('option');
+                            uploadOption.value = module;
+                            uploadOption.textContent = module;
+                            uploadModuleSelect.appendChild(uploadOption);
+                            
+                            const queryOption = document.createElement('option');
+                            queryOption.value = module;
+                            queryOption.textContent = module;
+                            queryModuleSelect.appendChild(queryOption);
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error loading modules:', error);
+                }
+            }
+            
+            async function loadSubmodulesForModule(module, targetSelectId = null) {
+                try {
+                    const url = module ? `/api/submodules?module=${encodeURIComponent(module)}` : '/api/submodules';
+                    const response = await fetch(url, {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        const submodules = data.submodules || [];
+                        
+                        // Update both upload and query submodule selects if no target specified
+                        const selectIds = targetSelectId ? [targetSelectId] : ['uploadSubmodule', 'querySubmodule'];
+                        
+                        selectIds.forEach(selectId => {
+                            const select = document.getElementById(selectId);
+                            if (!select) return;
+                            
+                            select.innerHTML = '<option value="">' + (selectId === 'querySubmodule' ? '-- All Submodules --' : '-- Select Submodule --') + '</option>';
+                            
+                            submodules.forEach(submodule => {
+                                const option = document.createElement('option');
+                                option.value = submodule;
+                                option.textContent = submodule;
+                                select.appendChild(option);
+                            });
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error loading submodules:', error);
+                }
+            }
+            
             // Initialize
             window.addEventListener('DOMContentLoaded', function() {
                 if (!checkAuth()) return;
@@ -1295,6 +1510,21 @@ async def root():
                 loadConversationHistory();
                 loadDocuments();
                 setupDragAndDrop();
+                loadModules();
+                loadSubmodulesForModule(null); // Load all submodules initially
+                
+                // Add event listener for module change in upload
+                document.getElementById('uploadModule').addEventListener('change', function() {
+                    loadSubmodulesForModule(this.value, 'uploadSubmodule');
+                });
+                
+                // Close edit modal when clicking outside of it
+                window.addEventListener('click', function(event) {
+                    const modal = document.getElementById('editDocumentModal');
+                    if (event.target === modal) {
+                        closeEditModal();
+                    }
+                });
             });
             
             // Tab switching
@@ -1436,6 +1666,17 @@ async def root():
             async function uploadDocument(file) {
                 const formData = new FormData();
                 formData.append('file', file);
+                
+                // Add module and submodule if selected
+                const module = document.getElementById('uploadModule').value;
+                const submodule = document.getElementById('uploadSubmodule').value;
+                if (module) {
+                    formData.append('module', module);
+                }
+                if (submodule) {
+                    formData.append('submodule', submodule);
+                }
+                
                 const progressDiv = document.getElementById('uploadProgress');
                 const progressFill = document.getElementById('progressFill');
                 const statusText = document.getElementById('uploadStatus');
@@ -1460,13 +1701,19 @@ async def root():
                                 progressDiv.classList.add('hidden');
                                 statusText.textContent = '';
                                 loadDocuments();
+                                loadModules(); // Reload modules in case new ones were added
                                 document.getElementById('docInput').value = '';
+                                document.getElementById('uploadModule').value = '';
+                                document.getElementById('uploadSubmodule').value = '';
                             }, 1000);
                         } else {
-                            throw new Error('Upload failed');
+                            const errorData = JSON.parse(xhr.responseText);
+                            throw new Error(errorData.detail || 'Upload failed');
                         }
                     };
                     xhr.open('POST', '/api/documents/upload');
+                    // Add auth token to request
+                    xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
                     xhr.send(formData);
                 } catch (error) {
                     progressDiv.classList.add('hidden');
@@ -1476,19 +1723,65 @@ async def root():
             
             async function loadDocuments() {
                 try {
-                    const response = await fetch('/api/documents');
+                    const response = await fetch('/api/documents', {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    if (response.status === 401) {
+                        window.location.href = '/login';
+                        return;
+                    }
                     const data = await response.json();
                     const listDiv = document.getElementById('documentsList');
                     if (data.documents && data.documents.length > 0) {
-                        listDiv.innerHTML = data.documents.map(doc => `
+                        listDiv.innerHTML = data.documents.map(doc => {
+                            // Determine uploader display text
+                            let uploaderText = '';
+                            if (doc.uploader_username) {
+                                // Check if current user uploaded this document
+                                if (currentUser && doc.uploaded_by === currentUser.id) {
+                                    uploaderText = '• Uploaded by: <strong>You</strong>';
+                                } else {
+                                    uploaderText = '• Uploaded by: <strong>' + escapeHtml(doc.uploader_username) + '</strong>';
+                                }
+                            } else if (doc.uploaded_by === null) {
+                                uploaderText = '• Uploaded by: <em>System</em>';
+                            }
+                            
+                            // Build module/submodule tags
+                            let moduleSubmoduleTags = '';
+                            if (doc.module) {
+                                moduleSubmoduleTags += '<span class="module-tag">Module: ' + escapeHtml(doc.module) + '</span>';
+                            }
+                            if (doc.submodule) {
+                                moduleSubmoduleTags += '<span class="submodule-tag">Submodule: ' + escapeHtml(doc.submodule) + '</span>';
+                            }
+                            if (!doc.module && !doc.submodule) {
+                                moduleSubmoduleTags = '<span style="color: #95a5a6; font-style: italic; margin-left: 8px;">Not categorized</span>';
+                            }
+                            
+                            // Show Edit button for all documents (use ID if available, otherwise use filename)
+                            const editButton = doc.id 
+                                ? `<button class="secondary" onclick="editDocumentById(${doc.id})">Edit</button>`
+                                : `<button class="secondary" onclick="editDocumentByFilename('${escapeHtml(doc.filename)}')">Edit</button>`;
+                            
+                            return `
                             <div class="document-item">
                                 <div class="document-info">
                                     <div class="document-name">${escapeHtml(doc.filename)}</div>
-                                    <div class="document-meta">${doc.size ? formatBytes(doc.size) : ''} ${doc.chunks ? '• ' + doc.chunks + ' chunks' : ''}</div>
+                                    <div class="document-meta">
+                                        ${doc.size ? formatBytes(doc.size) : ''} 
+                                        ${doc.chunks ? '• ' + doc.chunks + ' chunks' : ''} 
+                                        ${uploaderText}
+                                        ${moduleSubmoduleTags}
+                                    </div>
                                 </div>
-                                <button class="danger" onclick="deleteDocument('${escapeHtml(doc.filename)}')">Delete</button>
+                                <div class="document-actions">
+                                    ${editButton}
+                                    <button class="danger" onclick="deleteDocument('${escapeHtml(doc.filename)}')">Delete</button>
+                                </div>
                             </div>
-                        `).join('');
+                        `;
+                        }).join('');
                     } else {
                         listDiv.innerHTML = '<p style="color: #6c757d; text-align: center; padding: 20px;">No documents indexed yet.</p>';
                     }
@@ -1501,12 +1794,234 @@ async def root():
                 if (!confirm('Are you sure you want to delete ' + filename + '?')) return;
                 try {
                     const response = await fetch('/api/documents/' + encodeURIComponent(filename), {
-                        method: 'DELETE'
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${authToken}` }
                     });
                     if (response.ok) {
                         loadDocuments();
                     } else {
-                        alert('Error deleting document');
+                        const errorData = await response.json().catch(() => ({ detail: 'Error deleting document' }));
+                        if (response.status === 403) {
+                            alert('Permission denied: ' + (errorData.detail || 'You can only delete documents you uploaded.'));
+                        } else if (response.status === 404) {
+                            alert('Document not found: ' + filename);
+                        } else {
+                            alert('Error deleting document: ' + (errorData.detail || 'Unknown error'));
+                        }
+                    }
+                } catch (error) {
+                    alert('Error: ' + error.message);
+                }
+            }
+            
+            async function editDocumentById(documentId) {
+                try {
+                    // Fetch document details from the documents list
+                    const response = await fetch('/api/documents', {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    if (!response.ok) {
+                        throw new Error('Failed to load documents');
+                    }
+                    
+                    const data = await response.json();
+                    const doc = data.documents.find(d => d.id === documentId);
+                    if (!doc) {
+                        alert('Document not found');
+                        return;
+                    }
+                    
+                    showEditModal(doc, documentId);
+                } catch (error) {
+                    alert('Error loading document: ' + error.message);
+                }
+            }
+            
+            async function editDocumentByFilename(filename) {
+                try {
+                    // Fetch document details from the documents list
+                    const response = await fetch('/api/documents', {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    if (!response.ok) {
+                        throw new Error('Failed to load documents');
+                    }
+                    
+                    const data = await response.json();
+                    const doc = data.documents.find(d => d.filename === filename);
+                    if (!doc) {
+                        alert('Document not found');
+                        return;
+                    }
+                    
+                    showEditModal(doc, null, filename);
+                } catch (error) {
+                    alert('Error loading document: ' + error.message);
+                }
+            }
+            
+            async function showEditModal(doc, documentId, filename = null) {
+                // Show modal and populate form
+                const modal = document.getElementById('editDocumentModal');
+                const content = document.getElementById('editDocumentContent');
+                
+                // Store documentId and filename for save function
+                modal.dataset.documentId = documentId || '';
+                modal.dataset.filename = filename || '';
+                
+                // Build form HTML with current values
+                content.innerHTML = `
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; font-weight: 600; margin-bottom: 5px; color: #495057;">Document:</label>
+                        <p style="margin: 0; color: #6c757d; font-size: 14px;">${escapeHtml(doc.filename)}</p>
+                    </div>
+                    <div style="margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div>
+                            <label for="editModule" style="display: block; font-weight: 600; margin-bottom: 8px; color: #495057;">Module:</label>
+                            <select id="editModule" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 14px;" onchange="loadSubmodulesForEditModule(this.value)">
+                                <option value="">-- Select Module --</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="editSubmodule" style="display: block; font-weight: 600; margin-bottom: 8px; color: #495057;">Submodule:</label>
+                            <select id="editSubmodule" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 14px;">
+                                <option value="">-- Select Submodule --</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 30px;">
+                        <button class="secondary" onclick="closeEditModal()">Cancel</button>
+                        <button onclick="saveDocumentMetadata()">Save Changes</button>
+                    </div>
+                `;
+                
+                // Load modules and set current values
+                await loadModulesForEdit();
+                if (doc.module) {
+                    document.getElementById('editModule').value = doc.module;
+                    await loadSubmodulesForEditModule(doc.module);
+                }
+                if (doc.submodule) {
+                    setTimeout(() => {
+                        document.getElementById('editSubmodule').value = doc.submodule;
+                    }, 100);
+                }
+                
+                // Show modal
+                modal.style.display = 'block';
+            }
+            
+            function closeEditModal() {
+                document.getElementById('editDocumentModal').style.display = 'none';
+            }
+            
+            async function loadModulesForEdit() {
+                try {
+                    const response = await fetch('/api/modules', {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        const modules = data.modules || [];
+                        const editModuleSelect = document.getElementById('editModule');
+                        
+                        // Clear existing options (except first)
+                        editModuleSelect.innerHTML = '<option value="">-- Select Module --</option>';
+                        
+                        // Add modules
+                        modules.forEach(module => {
+                            const option = document.createElement('option');
+                            option.value = module;
+                            option.textContent = module;
+                            editModuleSelect.appendChild(option);
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error loading modules:', error);
+                }
+            }
+            
+            async function loadSubmodulesForEditModule(module) {
+                try {
+                    const url = module ? `/api/submodules?module=${encodeURIComponent(module)}` : '/api/submodules';
+                    const response = await fetch(url, {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        const submodules = data.submodules || [];
+                        const editSubmoduleSelect = document.getElementById('editSubmodule');
+                        
+                        editSubmoduleSelect.innerHTML = '<option value="">-- Select Submodule --</option>';
+                        
+                        submodules.forEach(submodule => {
+                            const option = document.createElement('option');
+                            option.value = submodule;
+                            option.textContent = submodule;
+                            editSubmoduleSelect.appendChild(option);
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error loading submodules:', error);
+                }
+            }
+            
+            async function saveDocumentMetadata() {
+                try {
+                    const modal = document.getElementById('editDocumentModal');
+                    const documentId = modal.dataset.documentId;
+                    const filename = modal.dataset.filename;
+                    
+                    const module = document.getElementById('editModule').value || null;
+                    const submodule = document.getElementById('editSubmodule').value || null;
+                    
+                    let response;
+                    if (documentId) {
+                        // Update by ID (existing database document)
+                        response = await fetch(`/api/documents/${documentId}/metadata`, {
+                            method: 'PUT',
+                            headers: {
+                                'Authorization': `Bearer ${authToken}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                module: module,
+                                submodule: submodule
+                            })
+                        });
+                    } else if (filename) {
+                        // Update by filename (filesystem-only document - will create DB entry)
+                        response = await fetch(`/api/documents/by-filename/${encodeURIComponent(filename)}/metadata`, {
+                            method: 'PUT',
+                            headers: {
+                                'Authorization': `Bearer ${authToken}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                module: module,
+                                submodule: submodule
+                            })
+                        });
+                    } else {
+                        alert('Error: No document ID or filename specified');
+                        return;
+                    }
+                    
+                    if (response.ok) {
+                        closeEditModal();
+                        loadDocuments(); // Reload document list to show updated metadata
+                        
+                        // Show success message
+                        const listDiv = document.getElementById('documentsList');
+                        const successMsg = document.createElement('div');
+                        successMsg.className = 'success-message';
+                        successMsg.textContent = 'Document metadata updated successfully!';
+                        successMsg.style.marginBottom = '15px';
+                        listDiv.insertBefore(successMsg, listDiv.firstChild);
+                        setTimeout(() => successMsg.remove(), 3000);
+                    } else {
+                        const errorData = await response.json().catch(() => ({ detail: 'Failed to update document metadata' }));
+                        alert('Error updating document: ' + (errorData.detail || 'Unknown error'));
                     }
                 } catch (error) {
                     alert('Error: ' + error.message);
@@ -1609,10 +2124,18 @@ async def root():
                 askBtn.textContent = 'Processing...';
                 answerDiv.innerHTML = '<div class="loading">Processing your question... This may take 20-90 seconds</div>';
                 try {
+                    // Get module and submodule filters
+                    const module = document.getElementById('queryModule').value || null;
+                    const submodule = document.getElementById('querySubmodule').value || null;
+                    
+                    const requestBody = { question };
+                    if (module) requestBody.module = module;
+                    if (submodule) requestBody.submodule = submodule;
+                    
                     const response = await fetch('/api/query', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ question })
+                        body: JSON.stringify(requestBody)
                     });
                     const data = await response.json();
                     if (response.ok) {
@@ -1807,10 +2330,14 @@ async def query(
     
     try:
         pipeline = get_pipeline()
-        logger.info(f"User {current_user.username} querying: {request.question[:100]}...")
+        logger.info(f"User {current_user.username} querying: {request.question[:100]}... (module={request.module}, submodule={request.submodule})")
         
-        # Query the pipeline - returns (answer, sources) tuple
-        answer, sources = pipeline.query(request.question)
+        # Query the pipeline with optional module/submodule filters - returns (answer, sources) tuple
+        answer, sources = pipeline.query(
+            request.question,
+            module=request.module,
+            submodule=request.submodule
+        )
         
         # Clean up sources - remove duplicates and format nicely
         unique_sources = []
@@ -1874,17 +2401,31 @@ async def query(
 
 
 @app.post("/api/documents/upload")
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(
+    file: UploadFile = File(...),
+    module: Optional[str] = Form(None),
+    submodule: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("upload_documents")),
+    db: Session = Depends(get_db)
+):
     """
-    Upload and index a document.
+    Upload and index a document with optional module/submodule categorization.
     
     Args:
         file: Document file (PDF, DOCX, or TXT)
+        module: Optional module name (unique module, e.g., "Loan", "Account")
+        submodule: Optional submodule name (NOT unique, can exist under different modules, e.g., "New")
+        current_user: Current authenticated user
+        db: Database session
         
     Returns:
         dict: Upload and indexing status
     """
     try:
+        from src.database.crud import create_document_metadata
+        from pathlib import Path
+        
         pipeline = get_pipeline()
         
         # Save uploaded file
@@ -1896,16 +2437,37 @@ async def upload_document(file: UploadFile = File(...)):
             content = await file.read()
             f.write(content)
         
-        logger.info(f"Uploaded file: {file.filename} ({len(content)} bytes)")
+        logger.info(f"Uploaded file: {file.filename} ({len(content)} bytes) - module={module}, submodule={submodule}")
         
-        # Index the document
-        num_chunks = pipeline.index_documents(file_paths=[file_path])
+        # Index the document with module/submodule
+        num_chunks = pipeline.index_documents(
+            file_paths=[file_path],
+            module=module,
+            submodule=submodule
+        )
+        
+        # Store document metadata in database
+        file_type = Path(file.filename).suffix[1:].lower() if Path(file.filename).suffix else None
+        metadata = create_document_metadata(
+            db=db,
+            filename=file.filename,
+            file_path=file_path,
+            module=module,
+            submodule=submodule,
+            uploaded_by=current_user.id,
+            file_size=len(content),
+            file_type=file_type,
+            chunk_count=num_chunks
+        )
         
         return {
             "status": "success",
             "filename": file.filename,
             "size": len(content),
-            "chunks_indexed": num_chunks
+            "chunks_indexed": num_chunks,
+            "module": module,
+            "submodule": submodule,
+            "file_path": file_path
         }
     except Exception as e:
         logger.error(f"Error uploading document: {e}")
@@ -1963,28 +2525,127 @@ async def get_user_conversation_history(
 
 
 @app.get("/api/documents")
-async def list_documents():
-    """List all indexed documents."""
+async def list_documents(
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("view_documents")),
+    db: Session = Depends(get_db)
+):
+    """
+    List documents accessible to the current user based on ownership.
+    
+    - Admin users: See ALL documents
+    - General users: See only documents they uploaded
+    
+    Returns documents from database metadata including module/submodule information.
+    Maintains backward compatibility for documents that exist in filesystem but not in database.
+    
+    Args:
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        dict: List of documents with metadata (id, filename, module, submodule, size, chunks, uploaded_by, uploader_username, etc.)
+    """
     try:
+        from src.database.crud import get_user_accessible_documents
+        
         pipeline = get_pipeline()
         stats = pipeline.get_stats()
         
-        # Get document list from data directory
-        data_dir = "/var/www/chatbot_FC/data/documents"
-        documents = []
-        if os.path.exists(data_dir):
-            for filename in os.listdir(data_dir):
-                file_path = os.path.join(data_dir, filename)
-                if os.path.isfile(file_path):
-                    size = os.path.getsize(file_path)
-                    documents.append({
-                        "filename": filename,
-                        "size": size,
-                        "path": file_path
-                    })
+        # Fetch documents accessible to current user (filtered by ownership)
+        db_documents = get_user_accessible_documents(
+            db=db,
+            user_id=current_user.id,
+            user_type=current_user.user_type,
+            skip=0,
+            limit=1000  # Get all accessible documents
+        )
+        
+        # Create a map of file_path -> document metadata for quick lookup
+        db_doc_map = {doc.file_path: doc for doc in db_documents}
+        
+        # Also check filesystem for backward compatibility (documents that exist but aren't in DB)
+        # Only include filesystem documents if user is admin (for backward compatibility)
+        filesystem_documents = []
+        from src.auth.permissions import is_operational_admin
+        if is_operational_admin(current_user.user_type):
+            # Get admin user for filesystem-only documents
+            admin_user = db.query(User).filter(User.user_type == 'operational_admin').first()
+            admin_user_id = admin_user.id if admin_user else None
+            admin_username = admin_user.username if admin_user else None
+            
+            data_dir = "/var/www/chatbot_FC/data/documents"
+            if os.path.exists(data_dir):
+                for filename in os.listdir(data_dir):
+                    file_path = os.path.join(data_dir, filename)
+                    if os.path.isfile(file_path) and file_path not in db_doc_map:
+                        # Document exists in filesystem but not in database (backward compatibility)
+                        # Mark as owned by admin user (not System)
+                        size = os.path.getsize(file_path)
+                        filesystem_documents.append({
+                            "id": None,
+                            "filename": filename,
+                            "file_path": file_path,
+                            "module": None,
+                            "submodule": None,
+                            "size": size,
+                            "chunks": 0,
+                            "uploaded_at": None,
+                            "uploaded_by": admin_user_id,  # Set to admin instead of None
+                            "uploader_username": admin_username,  # Set to admin username
+                            "file_type": os.path.splitext(filename)[1][1:].lower() if os.path.splitext(filename)[1] else None
+                        })
+        
+        # Build response from database documents
+        response_documents = []
+        for doc in db_documents:
+            # Verify file still exists in filesystem
+            file_exists = os.path.exists(doc.file_path) and os.path.isfile(doc.file_path)
+            if file_exists:
+                # Use file size from filesystem (more accurate)
+                file_size = os.path.getsize(doc.file_path)
+            else:
+                # File doesn't exist, use stored size or 0
+                file_size = doc.file_size if doc.file_size else 0
+            
+            # Get uploader username
+            uploader_username = None
+            if doc.uploaded_by:
+                # Try to get username from relationship
+                if hasattr(doc, 'user') and doc.user:
+                    uploader_username = doc.user.username
+                elif hasattr(doc, 'uploader') and doc.uploader:
+                    uploader_username = doc.uploader.username
+                else:
+                    # Fallback: query user directly
+                    from src.database.crud import get_user
+                    uploader = get_user(db, doc.uploaded_by)
+                    if uploader:
+                        uploader_username = uploader.username
+            
+            response_documents.append({
+                "id": doc.id,
+                "filename": doc.filename,
+                "file_path": doc.file_path,
+                "module": doc.module,
+                "submodule": doc.submodule,
+                "size": file_size,
+                "chunks": doc.chunk_count if doc.chunk_count else 0,
+                "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+                "uploaded_by": doc.uploaded_by,
+                "uploader_username": uploader_username,
+                "file_type": doc.file_type
+            })
+        
+        # Add filesystem-only documents (backward compatibility - admin only)
+        response_documents.extend(filesystem_documents)
+        
+        # Sort by filename for consistent ordering
+        response_documents.sort(key=lambda x: x["filename"])
         
         return {
-            "documents": documents,
+            "documents": response_documents,
+            "total": len(response_documents),
             "total_chunks": stats.get("documents_indexed", 0)
         }
     except Exception as e:
@@ -1992,30 +2653,255 @@ async def list_documents():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.put("/api/documents/{document_id}/metadata", response_model=DocumentMetadataResponse)
+async def update_document_metadata(
+    document_id: int,
+    request: DocumentMetadataUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("upload_documents")),
+    db: Session = Depends(get_db)
+):
+    """
+    Update module/submodule for a specific document.
+    
+    Allows authenticated users with 'upload_documents' permission to update
+    document metadata (module and submodule categorization).
+    
+    Args:
+        document_id: ID of the document to update
+        request: Update request with optional module and submodule
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        DocumentMetadataResponse: Updated document metadata
+        
+    Raises:
+        HTTPException 404: Document not found
+        HTTPException 500: Failed to update document metadata
+    """
+    from src.database.crud import get_document_metadata_by_id
+    
+    # Get document metadata by ID
+    doc_metadata = get_document_metadata_by_id(db, document_id)
+    if not doc_metadata:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    logger.info(f"User {current_user.username} updating document {document_id} metadata: module={request.module}, submodule={request.submodule}")
+    
+    # Update metadata directly (we already have the document object)
+    # Handle empty strings as None (clearing the field)
+    if request.module is not None:
+        doc_metadata.module = request.module.strip() if request.module and request.module.strip() else None
+    if request.submodule is not None:
+        doc_metadata.submodule = request.submodule.strip() if request.submodule and request.submodule.strip() else None
+    
+    try:
+        db.commit()
+        db.refresh(doc_metadata)
+        logger.info(f"Updated document metadata {document_id}: module={doc_metadata.module}, submodule={doc_metadata.submodule}")
+        updated = doc_metadata
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating document metadata {document_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update document metadata: {str(e)}")
+    
+    # Get uploader username for response (relationship is named 'user' in model)
+    uploader_username = None
+    if hasattr(updated, 'user') and updated.user:
+        uploader_username = updated.user.username
+    elif hasattr(updated, 'uploader') and updated.uploader:  # Fallback for compatibility
+        uploader_username = updated.uploader.username
+    
+    return DocumentMetadataResponse(
+        id=updated.id,
+        filename=updated.filename,
+        file_path=updated.file_path,
+        module=updated.module,
+        submodule=updated.submodule,
+        uploaded_by=updated.uploaded_by,
+        uploaded_at=updated.uploaded_at,
+        last_indexed_at=updated.last_indexed_at,
+        chunk_count=updated.chunk_count,
+        file_size=updated.file_size,
+        file_type=updated.file_type,
+        uploader_username=uploader_username
+    )
+
+
+@app.put("/api/documents/by-filename/{filename}/metadata", response_model=DocumentMetadataResponse)
+async def update_document_metadata_by_filename(
+    filename: str,
+    request: DocumentMetadataUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("upload_documents")),
+    db: Session = Depends(get_db)
+):
+    """
+    Update module/submodule for a document by filename.
+    
+    If the document doesn't exist in the database, creates a new database entry.
+    This allows editing filesystem-only documents.
+    
+    Args:
+        filename: Filename of the document to update
+        request: Update request with optional module and submodule
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        DocumentMetadataResponse: Updated document metadata
+        
+    Raises:
+        HTTPException 404: Document file not found in filesystem
+        HTTPException 500: Failed to update/create document metadata
+    """
+    from src.database.crud import get_document_metadata, create_document_metadata
+    from pathlib import Path
+    import urllib.parse
+    
+    # Decode filename (in case it's URL encoded)
+    filename = urllib.parse.unquote(filename)
+    
+    # Build file path
+    data_dir = "/var/www/chatbot_FC/data/documents"
+    file_path = os.path.join(data_dir, filename)
+    
+    # Verify file exists
+    if not os.path.exists(file_path) or not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail=f"Document file not found: {filename}")
+    
+    # Get or create document metadata
+    doc_metadata = get_document_metadata(db, file_path)
+    
+    if not doc_metadata:
+        # Document doesn't exist in database - create it
+        logger.info(f"Creating database entry for filesystem document: {filename}")
+        file_size = os.path.getsize(file_path)
+        file_type = Path(filename).suffix[1:].lower() if Path(filename).suffix else None
+        
+        # Get admin user ID for uploaded_by
+        admin_user = db.query(User).filter(User.user_type == 'operational_admin').first()
+        uploaded_by = admin_user.id if admin_user else current_user.id
+        
+        doc_metadata = create_document_metadata(
+            db=db,
+            filename=filename,
+            file_path=file_path,
+            module=request.module.strip() if request.module and request.module.strip() else None,
+            submodule=request.submodule.strip() if request.submodule and request.submodule.strip() else None,
+            uploaded_by=uploaded_by,
+            file_size=file_size,
+            file_type=file_type,
+            chunk_count=0  # Will be updated when document is indexed
+        )
+        logger.info(f"Created document metadata for {filename} (ID: {doc_metadata.id})")
+    else:
+        # Document exists - update it
+        logger.info(f"Updating existing document metadata: {filename} (ID: {doc_metadata.id})")
+        # Handle empty strings as None (clearing the field)
+        if request.module is not None:
+            doc_metadata.module = request.module.strip() if request.module and request.module.strip() else None
+        if request.submodule is not None:
+            doc_metadata.submodule = request.submodule.strip() if request.submodule and request.submodule.strip() else None
+        
+        try:
+            db.commit()
+            db.refresh(doc_metadata)
+            logger.info(f"Updated document metadata {doc_metadata.id}: module={doc_metadata.module}, submodule={doc_metadata.submodule}")
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error updating document metadata {doc_metadata.id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to update document metadata: {str(e)}")
+    
+    # Get uploader username for response
+    uploader_username = None
+    if hasattr(doc_metadata, 'user') and doc_metadata.user:
+        uploader_username = doc_metadata.user.username
+    elif hasattr(doc_metadata, 'uploader') and doc_metadata.uploader:
+        uploader_username = doc_metadata.uploader.username
+    
+    return DocumentMetadataResponse(
+        id=doc_metadata.id,
+        filename=doc_metadata.filename,
+        file_path=doc_metadata.file_path,
+        module=doc_metadata.module,
+        submodule=doc_metadata.submodule,
+        uploaded_by=doc_metadata.uploaded_by,
+        uploaded_at=doc_metadata.uploaded_at,
+        last_indexed_at=doc_metadata.last_indexed_at,
+        chunk_count=doc_metadata.chunk_count,
+        file_size=doc_metadata.file_size,
+        file_type=doc_metadata.file_type,
+        uploader_username=uploader_username
+    )
+
+
 @app.delete("/api/documents/{filename}")
-async def delete_document(filename: str):
+async def delete_document(
+    filename: str,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("delete_documents")),
+    db: Session = Depends(get_db)
+):
     """
     Delete a document from the index and filesystem.
     
+    Users can only delete documents they uploaded (unless they are admin).
+    Admin users can delete any document.
+    
     Args:
         filename: Name of the document to delete
+        current_user: Current authenticated user
+        db: Database session
         
     Returns:
         dict: Deletion status
+        
+    Raises:
+        HTTPException 403: User does not have permission to delete this document
+        HTTPException 404: Document not found
     """
     try:
         import urllib.parse
+        from src.database.crud import get_document_metadata_by_file_path, can_user_access_document, delete_document_metadata
+        
         filename = urllib.parse.unquote(filename)
         
         data_dir = "/var/www/chatbot_FC/data/documents"
         file_path = os.path.join(data_dir, filename)
         
-        if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="Document not found")
+        # Find document in database
+        document_metadata = get_document_metadata_by_file_path(db, file_path)
         
-        # Delete file from filesystem
-        os.remove(file_path)
-        logger.info(f"Deleted document: {filename}")
+        if document_metadata:
+            # Check ownership - user can only delete documents they uploaded (unless admin)
+            if not can_user_access_document(
+                db=db,
+                user_id=current_user.id,
+                user_type=current_user.user_type,
+                document_id=document_metadata.id
+            ):
+                logger.warning(
+                    f"User {current_user.username} (ID: {current_user.id}) attempted to delete "
+                    f"document {filename} owned by user {document_metadata.uploaded_by}"
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail="You do not have permission to delete this document. You can only delete documents you uploaded."
+                )
+            
+            # Delete from database first
+            delete_document_metadata(db, document_metadata.id)
+            logger.info(f"Deleted document metadata for: {filename} (ID: {document_metadata.id})")
+        
+        # Delete file from filesystem (if it exists)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.info(f"Deleted document file: {filename}")
+        elif not document_metadata:
+            # File doesn't exist and not in database
+            raise HTTPException(status_code=404, detail="Document not found")
         
         # Note: Document chunks remain in Qdrant. Full reindexing would be needed to remove them.
         # For now, we just delete the file. A reindex endpoint can be used to rebuild the index.
@@ -2029,6 +2915,53 @@ async def delete_document(filename: str):
     except Exception as e:
         logger.error(f"Error deleting document: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Module/Submodule Endpoints
+# ============================================================================
+
+@app.get("/api/modules")
+async def get_modules(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all distinct module names from existing documents.
+    
+    Modules are unique - returns list of unique module names.
+    
+    Returns:
+        dict: List of distinct module names (sorted)
+    """
+    from src.database.crud import get_distinct_modules
+    
+    modules = get_distinct_modules(db)
+    return {"modules": modules}
+
+
+@app.get("/api/submodules")
+async def get_submodules(
+    module: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get distinct submodule names, optionally filtered by module.
+    
+    Submodules are NOT unique - same name can exist under different modules.
+    When module is provided, returns only submodules for that unique module.
+    
+    Args:
+        module: Optional unique module name to filter by
+        
+    Returns:
+        dict: List of distinct submodule names (sorted)
+    """
+    from src.database.crud import get_distinct_submodules
+    
+    submodules = get_distinct_submodules(db, module=module)
+    return {"submodules": submodules}
 
 
 @app.post("/api/query/image", response_model=QueryResponse)
@@ -2075,9 +3008,9 @@ async def query_image(
             # Fallback: use error message or description
             suggested_query = extraction.get("error_message") or extraction.get("description", "FlexCube error")
         
-        # Query RAG pipeline with extracted information
+        # Query RAG pipeline with extracted information (no module/submodule filter for image queries)
         pipeline = get_pipeline()
-        answer, sources = pipeline.query(suggested_query)
+        answer, sources = pipeline.query(suggested_query, module=None, submodule=None)
         
         # Clean up sources
         unique_sources = []
@@ -2596,6 +3529,7 @@ async def admin_dashboard_page(
                 <div class="nav-links">
                     <a href="/">🏠 Home</a>
                     <a href="/admin/users">👥 Users</a>
+                    <a href="/admin/modules">📁 Modules</a>
                     <a href="/admin/analytics">📊 Analytics</a>
                     <a href="/admin/training-data">📥 Export</a>
                     <a href="/admin/settings">⚙️ Settings</a>
@@ -2910,6 +3844,7 @@ async def admin_users_page(
                 <div class="nav-links">
                     <a href="/">🏠 Home</a>
                     <a href="/admin/dashboard">📊 Dashboard</a>
+                    <a href="/admin/modules">📁 Modules</a>
                     <a href="/admin/analytics">📈 Analytics</a>
                     <a href="/admin/training-data">📥 Export</a>
                     <a href="/admin/settings">⚙️ Settings</a>
@@ -3317,6 +4252,7 @@ async def admin_analytics_page(
                     <a href="/">🏠 Home</a>
                     <a href="/admin/dashboard">📈 Dashboard</a>
                     <a href="/admin/users">👥 Users</a>
+                    <a href="/admin/modules">📁 Modules</a>
                     <a href="/admin/training-data">📥 Export</a>
                     <a href="/admin/settings">⚙️ Settings</a>
                     <a href="#" onclick="logout(); return false;">🚪 Logout</a>
@@ -3581,6 +4517,7 @@ async def admin_training_data_page(
                     <a href="/">🏠 Home</a>
                     <a href="/admin/dashboard">📈 Dashboard</a>
                     <a href="/admin/users">👥 Users</a>
+                    <a href="/admin/modules">📁 Modules</a>
                     <a href="/admin/analytics">📊 Analytics</a>
                     <a href="/admin/settings">⚙️ Settings</a>
                     <a href="#" onclick="logout(); return false;">🚪 Logout</a>
@@ -3672,6 +4609,768 @@ async def admin_training_data_page(
                     window.location.href = '/login';
                 }
             }
+        </script>
+    </body>
+    </html>
+    """
+    return html_content
+
+
+def get_admin_modules_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """Dependency for admin modules page."""
+    return get_authenticated_admin_user(request, credentials, db, "view_admin_dashboard")
+
+
+@app.get("/admin/modules", response_class=HTMLResponse)
+async def admin_modules_page(
+    current_user: Optional[User] = Depends(get_admin_modules_user)
+):
+    """
+    Admin modules/submodules management page.
+    
+    Allows admins to view and manage document module/submodule assignments.
+    Redirects to login if not authenticated or lacks permission.
+    """
+    if not current_user:
+        return HTMLResponse(
+            content='<script>window.location.href="/login";</script>',
+            status_code=200
+        )
+    
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Module Management - Ask-NUO</title>
+        <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }
+            .container {
+                max-width: 1400px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                overflow: hidden;
+            }
+            .header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 30px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .header h1 { font-size: 2em; margin: 0; }
+            .nav-links { display: flex; gap: 15px; flex-wrap: wrap; }
+            .nav-links a {
+                color: white;
+                text-decoration: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                background: rgba(255,255,255,0.2);
+                transition: background 0.3s;
+            }
+            .nav-links a:hover { background: rgba(255,255,255,0.3); }
+            .content { padding: 30px; }
+            .filters {
+                display: flex;
+                gap: 15px;
+                margin-bottom: 20px;
+                flex-wrap: wrap;
+            }
+            .filters select {
+                padding: 10px;
+                border: 2px solid #e9ecef;
+                border-radius: 6px;
+                font-size: 14px;
+            }
+            .filters select:focus {
+                outline: none;
+                border-color: #667eea;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                background: white;
+                border-radius: 8px;
+                overflow: hidden;
+            }
+            table th, table td {
+                padding: 12px;
+                text-align: left;
+                border-bottom: 1px solid #e9ecef;
+            }
+            table th {
+                background: #f8f9fa;
+                font-weight: 600;
+                color: #495057;
+            }
+            .btn {
+                padding: 6px 12px;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 12px;
+                text-decoration: none;
+                display: inline-block;
+            }
+            .btn-primary { background: #667eea; color: white; }
+            .btn-primary:hover { background: #5568d3; }
+            .btn-danger { background: #dc3545; color: white; }
+            .btn-danger:hover { background: #c82333; }
+            .editable {
+                cursor: pointer;
+                padding: 4px 8px;
+                border-radius: 4px;
+                transition: background 0.2s;
+            }
+            .editable:hover {
+                background: #f0f0f0;
+            }
+            .loading { text-align: center; padding: 40px; color: #6c757d; }
+            .modal {
+                display: none;
+                position: fixed;
+                z-index: 1000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0,0,0,0.5);
+            }
+            .modal-content {
+                background-color: white;
+                margin: 15% auto;
+                padding: 20px;
+                border-radius: 8px;
+                width: 400px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            }
+            .modal-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 20px;
+            }
+            .modal-header h3 {
+                margin: 0;
+            }
+            .close {
+                color: #aaa;
+                font-size: 28px;
+                font-weight: bold;
+                cursor: pointer;
+            }
+            .close:hover {
+                color: #000;
+            }
+            .form-group {
+                margin-bottom: 15px;
+            }
+            .form-group label {
+                display: block;
+                margin-bottom: 5px;
+                font-weight: 600;
+                color: #495057;
+            }
+            .form-group input, .form-group select {
+                width: 100%;
+                padding: 10px;
+                border: 2px solid #e9ecef;
+                border-radius: 6px;
+                font-size: 14px;
+            }
+            .form-group input:focus, .form-group select:focus {
+                outline: none;
+                border-color: #667eea;
+            }
+            .btn-success { background: #28a745; color: white; }
+            .btn-success:hover { background: #218838; }
+            .section-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 20px;
+            }
+            .modules-table {
+                margin-bottom: 40px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div>
+                    <h1>📁 Module & Submodule Management</h1>
+                    <p style="margin-top: 5px; opacity: 0.9;">Manage document categorization</p>
+                </div>
+                <div class="nav-links">
+                    <a href="/">🏠 Home</a>
+                    <a href="/admin/dashboard">📊 Dashboard</a>
+                    <a href="/admin/users">👥 Users</a>
+                    <a href="/admin/analytics">📊 Analytics</a>
+                    <a href="/admin/training-data">📥 Export</a>
+                    <a href="/admin/settings">⚙️ Settings</a>
+                    <a href="#" onclick="logout(); return false;">🚪 Logout</a>
+                </div>
+            </div>
+            <div class="content">
+                <!-- Modules Management Section -->
+                <div class="modules-table">
+                    <div class="section-header">
+                        <h2>Modules & Submodules</h2>
+                        <button class="btn btn-primary" onclick="showAddModuleModal()">➕ Add Module</button>
+                    </div>
+                    <div id="modulesTable" class="loading">Loading modules...</div>
+                </div>
+                
+                <!-- Documents Section -->
+                <div style="border-top: 2px solid #e9ecef; padding-top: 30px;">
+                    <div class="section-header">
+                        <h2>Documents</h2>
+                    </div>
+                    <div class="filters">
+                        <select id="moduleFilter" onchange="loadDocuments()">
+                            <option value="">All Modules</option>
+                        </select>
+                        <select id="submoduleFilter" onchange="loadDocuments()">
+                            <option value="">All Submodules</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="loadDocuments()">🔍 Filter</button>
+                    </div>
+                    <div id="documentsTable" class="loading">Loading documents...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Add Module Modal -->
+        <div id="addModuleModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Add New Module</h3>
+                    <span class="close" onclick="closeAddModuleModal()">&times;</span>
+                </div>
+                <div class="form-group">
+                    <label for="newModuleName">Module Name:</label>
+                    <input type="text" id="newModuleName" placeholder="e.g., Loan, Account, Transaction">
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="btn btn-primary" onclick="createModule()">Create</button>
+                    <button class="btn" onclick="closeAddModuleModal()" style="background: #6c757d; color: white;">Cancel</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Add Submodule Modal -->
+        <div id="addSubmoduleModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Add Submodule</h3>
+                    <span class="close" onclick="closeAddSubmoduleModal()">&times;</span>
+                </div>
+                <div class="form-group">
+                    <label for="submoduleModule">Module:</label>
+                    <select id="submoduleModule">
+                        <option value="">Select Module</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="newSubmoduleName">Submodule Name:</label>
+                    <input type="text" id="newSubmoduleName" placeholder="e.g., New, Existing, Create">
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="btn btn-primary" onclick="createSubmodule()">Create</button>
+                    <button class="btn" onclick="closeAddSubmoduleModal()" style="background: #6c757d; color: white;">Cancel</button>
+                </div>
+            </div>
+        </div>
+        <script>
+            let authToken = localStorage.getItem('auth_token');
+            if (!authToken) {
+                window.location.href = '/login';
+            }
+            
+            let allModulesData = [];
+            
+            async function loadModulesTable() {
+                try {
+                    const response = await fetch('/api/admin/modules', {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    if (response.status === 401) {
+                        window.location.href = '/login';
+                        return;
+                    }
+                    if (!response.ok) throw new Error('Failed to load modules');
+                    const data = await response.json();
+                    allModulesData = data.modules || [];
+                    
+                    if (allModulesData.length > 0) {
+                        let html = '<table><thead><tr><th>Module</th><th>Submodules</th><th>Document Count</th><th>Actions</th></tr></thead><tbody>';
+                        allModulesData.forEach(module => {
+                            const submodulesList = module.submodules && module.submodules.length > 0 
+                                ? module.submodules.map(sub => `<span style="display: inline-block; margin: 2px 5px; padding: 4px 8px; background: #e9ecef; border-radius: 4px;">${escapeHtml(sub)} <span style="cursor: pointer; color: #dc3545;" onclick="deleteSubmodule('${escapeHtml(module.name)}', '${escapeHtml(sub)}')">×</span></span>`).join('')
+                                : '<em style="color: #6c757d;">No submodules</em>';
+                            
+                            html += `
+                                <tr>
+                                    <td><strong>${escapeHtml(module.name)}</strong></td>
+                                    <td>
+                                        ${submodulesList}
+                                        <button class="btn btn-success" style="margin-left: 10px; padding: 4px 8px; font-size: 11px;" onclick="showAddSubmoduleModal('${escapeHtml(module.name)}')">+ Add</button>
+                                    </td>
+                                    <td>${module.document_count}</td>
+                                    <td>
+                                        <button class="btn btn-primary" style="margin-right: 5px;" onclick="editModuleName('${escapeHtml(module.name)}')">Edit</button>
+                                        <button class="btn btn-danger" onclick="deleteModule('${escapeHtml(module.name)}')">Delete</button>
+                                    </td>
+                                </tr>
+                            `;
+                        });
+                        html += '</tbody></table>';
+                        document.getElementById('modulesTable').innerHTML = html;
+                    } else {
+                        document.getElementById('modulesTable').innerHTML = '<p style="color: #6c757d; text-align: center; padding: 40px;">No modules found. Click "Add Module" to create one.</p>';
+                    }
+                } catch (error) {
+                    console.error('Error loading modules table:', error);
+                    document.getElementById('modulesTable').innerHTML = '<div class="loading" style="color: #dc3545;">Error loading modules.</div>';
+                }
+            }
+            
+            function showAddModuleModal() {
+                document.getElementById('addModuleModal').style.display = 'block';
+                document.getElementById('newModuleName').value = '';
+                document.getElementById('newModuleName').focus();
+            }
+            
+            function closeAddModuleModal() {
+                document.getElementById('addModuleModal').style.display = 'none';
+            }
+            
+            function showAddSubmoduleModal(moduleName) {
+                document.getElementById('addSubmoduleModal').style.display = 'block';
+                const moduleSelect = document.getElementById('submoduleModule');
+                moduleSelect.innerHTML = '<option value="">Select Module</option>';
+                allModulesData.forEach(m => {
+                    const option = document.createElement('option');
+                    option.value = m.name;
+                    option.textContent = m.name;
+                    option.selected = m.name === moduleName;
+                    moduleSelect.appendChild(option);
+                });
+                document.getElementById('newSubmoduleName').value = '';
+                document.getElementById('newSubmoduleName').focus();
+            }
+            
+            function closeAddSubmoduleModal() {
+                document.getElementById('addSubmoduleModal').style.display = 'none';
+            }
+            
+            async function createModule() {
+                const moduleName = document.getElementById('newModuleName').value.trim();
+                if (!moduleName) {
+                    alert('Please enter a module name');
+                    return;
+                }
+                
+                try {
+                    // Check if module already exists
+                    const exists = allModulesData.find(m => m.name.toLowerCase() === moduleName.toLowerCase());
+                    if (exists) {
+                        alert(`Module "${moduleName}" already exists`);
+                        return;
+                    }
+                    
+                    // Create a placeholder document with this module
+                    // This makes the module available in the system
+                    const response = await fetch('/api/admin/modules/create', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ name: moduleName })
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Failed to create module');
+                    }
+                    
+                    closeAddModuleModal();
+                    loadModulesTable();
+                    loadModules(); // Refresh filter dropdown
+                    alert(`Module "${moduleName}" created successfully!`);
+                } catch (error) {
+                    alert('Error creating module: ' + error.message);
+                }
+            }
+            
+            async function createSubmodule() {
+                const moduleName = document.getElementById('submoduleModule').value;
+                const submoduleName = document.getElementById('newSubmoduleName').value.trim();
+                
+                if (!moduleName) {
+                    alert('Please select a module');
+                    return;
+                }
+                if (!submoduleName) {
+                    alert('Please enter a submodule name');
+                    return;
+                }
+                
+                try {
+                    // Create a placeholder document with this module+submodule combination
+                    const response = await fetch('/api/admin/modules/create-submodule', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ 
+                            module: moduleName,
+                            submodule: submoduleName
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Failed to create submodule');
+                    }
+                    
+                    closeAddSubmoduleModal();
+                    loadModulesTable();
+                    loadModules(); // Refresh filter dropdown
+                    alert(`Submodule "${submoduleName}" added to module "${moduleName}"!`);
+                } catch (error) {
+                    alert('Error creating submodule: ' + error.message);
+                }
+            }
+            
+            async function editModuleName(oldName) {
+                const newName = prompt('Enter new module name:', oldName);
+                if (!newName || newName.trim() === oldName) return;
+                
+                try {
+                    // Update all documents with this module name
+                    const response = await fetch('/api/admin/modules/rename', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ 
+                            old_name: oldName,
+                            new_name: newName.trim()
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Failed to rename module');
+                    }
+                    
+                    loadModulesTable();
+                    loadModules();
+                    loadDocuments();
+                    alert(`Module renamed from "${oldName}" to "${newName}"`);
+                } catch (error) {
+                    alert('Error renaming module: ' + error.message);
+                }
+            }
+            
+            async function deleteModule(moduleName) {
+                if (!confirm(`Are you sure you want to delete module "${moduleName}"? This will remove the module from all documents.`)) return;
+                
+                try {
+                    const response = await fetch('/api/admin/modules/delete', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ name: moduleName })
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Failed to delete module');
+                    }
+                    
+                    loadModulesTable();
+                    loadModules();
+                    loadDocuments();
+                    alert(`Module "${moduleName}" deleted successfully`);
+                } catch (error) {
+                    alert('Error deleting module: ' + error.message);
+                }
+            }
+            
+            async function deleteSubmodule(moduleName, submoduleName) {
+                if (!confirm(`Delete submodule "${submoduleName}" from module "${moduleName}"?`)) return;
+                
+                try {
+                    const response = await fetch('/api/admin/modules/delete-submodule', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ 
+                            module: moduleName,
+                            submodule: submoduleName
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Failed to delete submodule');
+                    }
+                    
+                    loadModulesTable();
+                    loadModules();
+                    loadDocuments();
+                } catch (error) {
+                    alert('Error deleting submodule: ' + error.message);
+                }
+            }
+            
+            async function loadModules() {
+                try {
+                    const response = await fetch('/api/admin/modules', {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    if (response.status === 401) {
+                        window.location.href = '/login';
+                        return;
+                    }
+                    if (!response.ok) throw new Error('Failed to load modules');
+                    const data = await response.json();
+                    
+                    const moduleSelect = document.getElementById('moduleFilter');
+                    moduleSelect.innerHTML = '<option value="">All Modules</option>';
+                    data.modules.forEach(module => {
+                        const option = document.createElement('option');
+                        option.value = module.name;
+                        option.textContent = `${module.name} (${module.document_count} docs, ${module.submodule_count} submodules)`;
+                        moduleSelect.appendChild(option);
+                    });
+                } catch (error) {
+                    console.error('Error loading modules:', error);
+                }
+            }
+            
+            async function loadDocuments() {
+                const module = document.getElementById('moduleFilter').value;
+                const submodule = document.getElementById('submoduleFilter').value;
+                
+                let url = '/api/admin/documents?limit=100';
+                if (module) url += `&module=${encodeURIComponent(module)}`;
+                if (submodule) url += `&submodule=${encodeURIComponent(submodule)}`;
+                
+                try {
+                    const response = await fetch(url, {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    if (response.status === 401) {
+                        window.location.href = '/login';
+                        return;
+                    }
+                    if (!response.ok) throw new Error('Failed to load documents');
+                    const data = await response.json();
+                    
+                    if (data.documents && data.documents.length > 0) {
+                        document.getElementById('documentsTable').innerHTML = `
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Filename</th>
+                                        <th>Module</th>
+                                        <th>Submodule</th>
+                                        <th>Uploaded By</th>
+                                        <th>Chunks</th>
+                                        <th>Size</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.documents.map(doc => `
+                                        <tr>
+                                            <td>${doc.id}</td>
+                                            <td>${escapeHtml(doc.filename)}</td>
+                                            <td>
+                                                <span class="editable" onclick="editModule(${doc.id}, '${escapeHtml(doc.module || '')}')">
+                                                    ${doc.module || '<em>None</em>'}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="editable" onclick="editSubmodule(${doc.id}, '${escapeHtml(doc.submodule || '')}')">
+                                                    ${doc.submodule || '<em>None</em>'}
+                                                </span>
+                                            </td>
+                                            <td>${doc.uploader_username || 'N/A'}</td>
+                                            <td>${doc.chunk_count}</td>
+                                            <td>${formatBytes(doc.file_size)}</td>
+                                            <td>
+                                                <button class="btn btn-danger" onclick="deleteDocument(${doc.id})">Delete</button>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                            <p style="margin-top: 15px; color: #6c757d;">Total: ${data.total} documents</p>
+                        `;
+                    } else {
+                        document.getElementById('documentsTable').innerHTML = '<p style="color: #6c757d; text-align: center; padding: 40px;">No documents found.</p>';
+                    }
+                } catch (error) {
+                    console.error('Error loading documents:', error);
+                    document.getElementById('documentsTable').innerHTML = '<div class="loading" style="color: #dc3545;">Error loading documents.</div>';
+                }
+            }
+            
+            async function editModule(documentId, currentModule) {
+                const newModule = prompt('Enter module name (leave empty to clear):', currentModule);
+                if (newModule === null) return; // User cancelled
+                
+                try {
+                    const response = await fetch(`/api/admin/documents/${documentId}/metadata`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            module: newModule || null,
+                            submodule: null  // Keep submodule unchanged
+                        })
+                    });
+                    if (!response.ok) throw new Error('Failed to update module');
+                    loadDocuments();
+                    loadModules();
+                } catch (error) {
+                    alert('Error updating module: ' + error.message);
+                }
+            }
+            
+            async function editSubmodule(documentId, currentSubmodule) {
+                const newSubmodule = prompt('Enter submodule name (leave empty to clear):', currentSubmodule);
+                if (newSubmodule === null) return; // User cancelled
+                
+                try {
+                    const response = await fetch(`/api/admin/documents/${documentId}/metadata`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            module: null,  // Keep module unchanged
+                            submodule: newSubmodule || null
+                        })
+                    });
+                    if (!response.ok) throw new Error('Failed to update submodule');
+                    loadDocuments();
+                } catch (error) {
+                    alert('Error updating submodule: ' + error.message);
+                }
+            }
+            
+            async function deleteDocument(documentId) {
+                if (!confirm('Are you sure you want to delete this document metadata? This will only delete the metadata entry, not the file.')) return;
+                try {
+                    const response = await fetch(`/api/admin/documents/${documentId}/metadata`, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    if (!response.ok) throw new Error('Failed to delete document');
+                    loadDocuments();
+                    loadModules();
+                } catch (error) {
+                    alert('Error: ' + error.message);
+                }
+            }
+            
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+            
+            function formatBytes(bytes) {
+                if (!bytes) return '';
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+            }
+            
+            function logout() {
+                if (confirm('Are you sure you want to logout?')) {
+                    localStorage.removeItem('auth_token');
+                    localStorage.removeItem('user_info');
+                    window.location.href = '/login';
+                }
+            }
+            
+            // Update submodule filter when module changes
+            document.getElementById('moduleFilter').addEventListener('change', async function() {
+                const module = this.value;
+                const submoduleSelect = document.getElementById('submoduleFilter');
+                
+                if (module) {
+                    try {
+                        const response = await fetch(`/api/submodules?module=${encodeURIComponent(module)}`, {
+                            headers: { 'Authorization': `Bearer ${authToken}` }
+                        });
+                        if (response.ok) {
+                            const data = await response.json();
+                            submoduleSelect.innerHTML = '<option value="">All Submodules</option>';
+                            data.submodules.forEach(sub => {
+                                const option = document.createElement('option');
+                                option.value = sub;
+                                option.textContent = sub;
+                                submoduleSelect.appendChild(option);
+                            });
+                        }
+                    } catch (error) {
+                        console.error('Error loading submodules:', error);
+                    }
+                } else {
+                    submoduleSelect.innerHTML = '<option value="">All Submodules</option>';
+                }
+            });
+            
+            // Close modals when clicking outside
+            window.onclick = function(event) {
+                const addModuleModal = document.getElementById('addModuleModal');
+                const addSubmoduleModal = document.getElementById('addSubmoduleModal');
+                if (event.target == addModuleModal) {
+                    closeAddModuleModal();
+                }
+                if (event.target == addSubmoduleModal) {
+                    closeAddSubmoduleModal();
+                }
+            }
+            
+            loadModulesTable();
+            loadModules();
+            loadDocuments();
         </script>
     </body>
     </html>
@@ -3798,6 +5497,7 @@ async def admin_settings_page(
                     <a href="/">🏠 Home</a>
                     <a href="/admin/dashboard">📈 Dashboard</a>
                     <a href="/admin/users">👥 Users</a>
+                    <a href="/admin/modules">📁 Modules</a>
                     <a href="/admin/analytics">📊 Analytics</a>
                     <a href="/admin/training-data">📥 Export</a>
                     <a href="#" onclick="logout(); return false;">🚪 Logout</a>
@@ -4913,6 +6613,353 @@ async def export_training_data(
             content=export_data,
             headers={"Content-Disposition": f"attachment; filename=training_data_{datetime.utcnow().strftime('%Y%m%d')}.json"}
         )
+
+
+# ============================================================================
+# Admin Module/Submodule Management Endpoints
+# ============================================================================
+
+@app.get("/api/admin/modules")
+async def get_admin_modules(
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("view_admin_dashboard")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get modules with statistics (document count, submodule count).
+    
+    Modules are unique - returns list of unique modules with aggregated stats.
+    
+    Returns:
+        dict: List of modules with statistics
+    """
+    from src.database.crud import get_distinct_modules, get_distinct_submodules
+    from src.database.models import DocumentMetadata
+    
+    modules_list = get_distinct_modules(db)
+    modules_with_stats = []
+    
+    for module_name in modules_list:
+        # Count documents with this unique module
+        doc_count = db.query(DocumentMetadata).filter(
+            DocumentMetadata.module == module_name
+        ).count()
+        
+        # Get submodules for this unique module
+        submodules = get_distinct_submodules(db, module=module_name)
+        
+        modules_with_stats.append({
+            "name": module_name,
+            "document_count": doc_count,
+            "submodule_count": len(submodules),
+            "submodules": submodules
+        })
+    
+    return {"modules": modules_with_stats}
+
+
+@app.post("/api/admin/modules/create")
+async def create_module(
+    request: CreateModuleRequest,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("view_admin_dashboard")),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new module by creating a placeholder document metadata entry.
+    
+    Since modules are denormalized (only exist when documents use them),
+    we create a placeholder entry to make the module available.
+    """
+    from src.database.crud import create_document_metadata, get_distinct_modules
+    from src.database.models import DocumentMetadata
+    
+    module_name = request.name.strip()
+    if not module_name:
+        raise HTTPException(status_code=400, detail="Module name is required")
+    
+    # Check if module already exists
+    existing_modules = get_distinct_modules(db)
+    if module_name in existing_modules:
+        raise HTTPException(status_code=400, detail=f"Module '{module_name}' already exists")
+    
+    # Create placeholder document metadata entry
+    # This makes the module available in the system
+    placeholder_path = f"/var/www/chatbot_FC/data/documents/.placeholder_{module_name.lower().replace(' ', '_')}.txt"
+    create_document_metadata(
+        db=db,
+        filename=f".placeholder_{module_name}.txt",
+        file_path=placeholder_path,
+        module=module_name,
+        submodule=None,
+        uploaded_by=current_user.id,
+        file_size=0,
+        file_type="txt",
+        chunk_count=0
+    )
+    
+    return {"status": "success", "message": f"Module '{module_name}' created successfully"}
+
+
+@app.post("/api/admin/modules/create-submodule")
+async def create_submodule(
+    request: CreateSubmoduleRequest,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("view_admin_dashboard")),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new submodule by creating a placeholder document metadata entry.
+    
+    Creates a module+submodule combination.
+    """
+    from src.database.crud import create_document_metadata, get_distinct_modules
+    from src.database.models import DocumentMetadata
+    
+    module_name = request.module.strip()
+    submodule_name = request.submodule.strip()
+    
+    if not module_name:
+        raise HTTPException(status_code=400, detail="Module name is required")
+    if not submodule_name:
+        raise HTTPException(status_code=400, detail="Submodule name is required")
+    
+    # Check if module exists
+    existing_modules = get_distinct_modules(db)
+    if module_name not in existing_modules:
+        raise HTTPException(status_code=400, detail=f"Module '{module_name}' does not exist. Create the module first.")
+    
+    # Check if this combination already exists
+    existing = db.query(DocumentMetadata).filter(
+        DocumentMetadata.module == module_name,
+        DocumentMetadata.submodule == submodule_name
+    ).first()
+    
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Submodule '{submodule_name}' already exists for module '{module_name}'")
+    
+    # Create placeholder document metadata entry
+    placeholder_path = f"/var/www/chatbot_FC/data/documents/.placeholder_{module_name.lower().replace(' ', '_')}_{submodule_name.lower().replace(' ', '_')}.txt"
+    create_document_metadata(
+        db=db,
+        filename=f".placeholder_{module_name}_{submodule_name}.txt",
+        file_path=placeholder_path,
+        module=module_name,
+        submodule=submodule_name,
+        uploaded_by=current_user.id,
+        file_size=0,
+        file_type="txt",
+        chunk_count=0
+    )
+    
+    return {"status": "success", "message": f"Submodule '{submodule_name}' added to module '{module_name}'"}
+
+
+@app.post("/api/admin/modules/rename")
+async def rename_module(
+    request: RenameModuleRequest,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("view_admin_dashboard")),
+    db: Session = Depends(get_db)
+):
+    """
+    Rename a module by updating all documents that use it.
+    """
+    from src.database.models import DocumentMetadata
+    
+    old_name = request.old_name.strip()
+    new_name = request.new_name.strip()
+    
+    if not old_name or not new_name:
+        raise HTTPException(status_code=400, detail="Both old_name and new_name are required")
+    
+    if old_name == new_name:
+        raise HTTPException(status_code=400, detail="Old and new names are the same")
+    
+    # Update all documents with this module
+    updated = db.query(DocumentMetadata).filter(
+        DocumentMetadata.module == old_name
+    ).update({DocumentMetadata.module: new_name})
+    
+    db.commit()
+    
+    return {"status": "success", "message": f"Module renamed from '{old_name}' to '{new_name}'", "updated_count": updated}
+
+
+@app.post("/api/admin/modules/delete")
+async def delete_module(
+    request: DeleteModuleRequest,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("view_admin_dashboard")),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a module by removing it from all documents.
+    Only deletes placeholder entries, not actual documents.
+    """
+    from src.database.models import DocumentMetadata
+    
+    module_name = request.name.strip()
+    if not module_name:
+        raise HTTPException(status_code=400, detail="Module name is required")
+    
+    # Delete only placeholder entries (those starting with .placeholder_)
+    deleted = db.query(DocumentMetadata).filter(
+        DocumentMetadata.module == module_name,
+        DocumentMetadata.filename.like(".placeholder_%")
+    ).delete()
+    
+    # For actual documents, just remove the module assignment (set to None)
+    updated = db.query(DocumentMetadata).filter(
+        DocumentMetadata.module == module_name,
+        ~DocumentMetadata.filename.like(".placeholder_%")
+    ).update({DocumentMetadata.module: None, DocumentMetadata.submodule: None})
+    
+    db.commit()
+    
+    return {"status": "success", "message": f"Module '{module_name}' deleted", "deleted_placeholders": deleted, "updated_documents": updated}
+
+
+@app.post("/api/admin/modules/delete-submodule")
+async def delete_submodule(
+    request: DeleteSubmoduleRequest,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("view_admin_dashboard")),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a submodule by removing it from all documents with that module+submodule combination.
+    """
+    from src.database.models import DocumentMetadata
+    
+    module_name = request.module.strip()
+    submodule_name = request.submodule.strip()
+    
+    if not module_name or not submodule_name:
+        raise HTTPException(status_code=400, detail="Both module and submodule names are required")
+    
+    # Delete placeholder entries
+    deleted = db.query(DocumentMetadata).filter(
+        DocumentMetadata.module == module_name,
+        DocumentMetadata.submodule == submodule_name,
+        DocumentMetadata.filename.like(".placeholder_%")
+    ).delete()
+    
+    # For actual documents, just remove the submodule assignment
+    updated = db.query(DocumentMetadata).filter(
+        DocumentMetadata.module == module_name,
+        DocumentMetadata.submodule == submodule_name,
+        ~DocumentMetadata.filename.like(".placeholder_%")
+    ).update({DocumentMetadata.submodule: None})
+    
+    db.commit()
+    
+    return {"status": "success", "message": f"Submodule '{submodule_name}' deleted from module '{module_name}'", "deleted_placeholders": deleted, "updated_documents": updated}
+
+
+@app.get("/api/admin/documents", response_model=DocumentMetadataListResponse)
+async def admin_list_documents(
+    module: Optional[str] = None,
+    submodule: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("view_admin_dashboard")),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin endpoint to list all document metadata, with optional filtering.
+    Requires 'manage_documents' permission.
+    """
+    from src.database.crud import get_all_document_metadata
+    from src.database.models import DocumentMetadata
+    
+    documents = get_all_document_metadata(db, module=module, submodule=submodule, skip=skip, limit=limit)
+    total = db.query(DocumentMetadata).count()  # Simple count for now
+
+    response_docs = []
+    for doc in documents:
+        uploader_username = doc.uploader.username if doc.uploader else None
+        response_docs.append(DocumentMetadataResponse(
+            id=doc.id,
+            filename=doc.filename,
+            file_path=doc.file_path,
+            module=doc.module,
+            submodule=doc.submodule,
+            uploaded_by=doc.uploaded_by,
+            uploaded_at=doc.uploaded_at,
+            last_indexed_at=doc.last_indexed_at,
+            chunk_count=doc.chunk_count,
+            file_size=doc.file_size,
+            file_type=doc.file_type,
+            uploader_username=uploader_username
+        ))
+    return DocumentMetadataListResponse(documents=response_docs, total=total)
+
+
+@app.put("/api/admin/documents/{document_id}/metadata", response_model=DocumentMetadataResponse)
+async def admin_update_document_metadata(
+    document_id: int,
+    request: DocumentMetadataUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("view_admin_dashboard")),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin endpoint to update module/submodule for a specific document.
+    Requires 'manage_documents' permission.
+    """
+    from src.database.crud import update_document_metadata, get_document_metadata_by_id
+    
+    # Get document metadata
+    doc_metadata = get_document_metadata_by_id(db, document_id)
+    if not doc_metadata:
+        raise HTTPException(status_code=404, detail="Document metadata not found")
+    
+    # Update metadata using the file_path
+    updated = update_document_metadata(
+        db=db,
+        file_path=doc_metadata.file_path,
+        module=request.module,
+        submodule=request.submodule
+    )
+    
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update document metadata")
+    
+    uploader_username = updated.uploader.username if updated.uploader else None
+    return DocumentMetadataResponse(
+        id=updated.id,
+        filename=updated.filename,
+        file_path=updated.file_path,
+        module=updated.module,
+        submodule=updated.submodule,
+        uploaded_by=updated.uploaded_by,
+        uploaded_at=updated.uploaded_at,
+        last_indexed_at=updated.last_indexed_at,
+        chunk_count=updated.chunk_count,
+        file_size=updated.file_size,
+        file_type=updated.file_type,
+        uploader_username=uploader_username
+    )
+
+
+@app.delete("/api/admin/documents/{document_id}/metadata", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_document_metadata(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("view_admin_dashboard")),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin endpoint to delete document metadata.
+    Note: This only deletes the metadata entry, not the file or its chunks in Qdrant.
+    Requires 'manage_documents' permission.
+    """
+    from src.database.crud import delete_document_metadata
+    if not delete_document_metadata(db, document_id):
+        raise HTTPException(status_code=404, detail="Document metadata not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/api/admin/system/settings")

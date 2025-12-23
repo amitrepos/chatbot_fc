@@ -282,3 +282,6 @@ src/tests/e2e/test_browser_e2e.py::TestMainPage::test_main_page_loads_after_logi
 3. **Add more tests:** Cover additional user flows
 4. **Integrate CI/CD:** Add to your deployment pipeline
 
+
+
+

@@ -167,3 +167,6 @@ class TestUserCreation:
         assert isinstance(permissions, list)
         assert len(permissions) > 0, "User should have permissions from role template"
 
+
+
+

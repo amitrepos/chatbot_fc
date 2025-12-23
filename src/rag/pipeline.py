@@ -75,7 +75,9 @@ class FlexCubeRAGPipeline:
     def index_documents(
         self,
         file_paths: Optional[List[str]] = None,
-        directory: Optional[str] = None
+        directory: Optional[str] = None,
+        module: Optional[str] = None,
+        submodule: Optional[str] = None
     ) -> int:
         """
         Index documents into the vector store.
@@ -83,6 +85,8 @@ class FlexCubeRAGPipeline:
         Args:
             file_paths: List of specific file paths to index
             directory: Directory to index (if file_paths not provided)
+            module: Optional module name (unique module, e.g., "Loan", "Account")
+            submodule: Optional submodule name (NOT unique, can exist under different modules, e.g., "New")
             
         Returns:
             int: Number of documents indexed
@@ -94,12 +98,19 @@ class FlexCubeRAGPipeline:
             all_documents = []
             for file_path in file_paths:
                 try:
-                    docs = self.document_loader.load_file(file_path)
+                    docs = self.document_loader.load_file(file_path, module=module, submodule=submodule)
                     all_documents.extend(docs)
                 except Exception as e:
                     logger.error(f"Error loading {file_path}: {e}")
         else:
             all_documents = self.document_loader.load_directory(directory)
+            # If module/submodule provided for directory indexing, add to all documents
+            if module or submodule:
+                for doc in all_documents:
+                    if module:
+                        doc.metadata["module"] = module
+                    if submodule:
+                        doc.metadata["submodule"] = submodule
         
         if not all_documents:
             logger.warning("No documents to index")
@@ -146,12 +157,14 @@ class FlexCubeRAGPipeline:
         logger.info(f"Indexed {len(nodes)} chunks successfully")
         return len(nodes)
     
-    def query(self, question: str) -> tuple[str, List[str]]:
+    def query(self, question: str, module: Optional[str] = None, submodule: Optional[str] = None) -> tuple[str, List[str]]:
         """
-        Query the RAG system.
+        Query the RAG system with optional module/submodule filtering.
         
         Args:
             question: User's question
+            module: Optional module filter (unique module, e.g., "Loan", "Account")
+            submodule: Optional submodule filter (NOT unique, but combined with module creates unique filter)
             
         Returns:
             tuple: (answer, sources) - Answer text and list of source file paths
@@ -159,7 +172,7 @@ class FlexCubeRAGPipeline:
         if self.query_engine is None:
             raise RuntimeError("Query engine not initialized. Please index documents first.")
         
-        return self.query_engine.query(question)
+        return self.query_engine.query(question, module=module, submodule=submodule)
     
     def get_stats(self) -> dict:
         """

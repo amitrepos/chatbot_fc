@@ -131,23 +131,26 @@ class FlexCubeQueryEngine:
         
         logger.info("Query engine initialized successfully")
     
-    def query(self, question: str) -> tuple[str, List[str]]:
+    def query(self, question: str, module: Optional[str] = None, submodule: Optional[str] = None) -> tuple[str, List[str]]:
         """
-        Query the RAG system with a question.
+        Query the RAG system with a question and optional module/submodule filtering.
         
         Uses query expansion to improve retrieval:
         1. Expands question into synonyms and related phrases
         2. Retrieves using expanded query for better semantic matching
-        3. Synthesizes answer from retrieved context
-        4. Falls back to general knowledge if RAG context irrelevant
+        3. Filters by module/submodule if provided (module is unique, submodule is NOT unique)
+        4. Synthesizes answer from retrieved context
+        5. Falls back to general knowledge if RAG context irrelevant
         
         Args:
             question: User's question about FlexCube
+            module: Optional module filter (unique module, e.g., "Loan", "Account")
+            submodule: Optional submodule filter (NOT unique, but combined with module creates unique filter)
             
         Returns:
             tuple: (answer, sources) - Answer text and list of source file paths
         """
-        logger.info(f"Processing query: {question[:100]}...")
+        logger.info(f"Processing query: {question[:100]}... (module={module}, submodule={submodule})")
         
         try:
             # Initialize sources list fresh for each query
@@ -170,6 +173,7 @@ class FlexCubeQueryEngine:
                         # Use semantically enriched combined query
                         retrieval_query = expansion_details['combined_query']
                         logger.info(f"Using expanded query ({len(retrieval_query)} chars)")
+                        print(f"Using expanded query: {retrieval_query}")
                         logger.debug(f"Key terms: {expansion_details.get('key_terms', {})}")
                     
                 except Exception as e:
@@ -184,6 +188,41 @@ class FlexCubeQueryEngine:
             else:
                 # Standard: single retrieval with (possibly expanded) query
                 retrieved_nodes = self.retriever.retrieve(retrieval_query)
+            
+            # STEP 2.5: Filter by module/submodule if provided
+            if module is not None or submodule is not None:
+                filtered_nodes = []
+                for node in retrieved_nodes:
+                    # Get metadata from node (handle different node structures)
+                    node_metadata = None
+                    if hasattr(node, 'metadata') and node.metadata:
+                        node_metadata = node.metadata
+                    elif hasattr(node, 'node') and hasattr(node.node, 'metadata'):
+                        node_metadata = node.node.metadata
+                    
+                    if node_metadata:
+                        # Check module filter (module is unique)
+                        if module is not None:
+                            node_module = node_metadata.get('module')
+                            if node_module != module:
+                                continue  # Skip this node - different unique module
+                        
+                        # Check submodule filter (submodule is NOT unique, but combination is unique)
+                        if submodule is not None:
+                            node_submodule = node_metadata.get('submodule')
+                            if node_submodule != submodule:
+                                continue  # Skip this node - different submodule
+                        
+                        # Node passed both filters (or filters not set)
+                        filtered_nodes.append(node)
+                    else:
+                        # Node has no metadata - if filters are set, exclude it
+                        # If no filters, include it (backward compatibility)
+                        if module is None and submodule is None:
+                            filtered_nodes.append(node)
+                
+                retrieved_nodes = filtered_nodes
+                logger.info(f"Filtered to {len(retrieved_nodes)} nodes (module={module}, submodule={submodule})")
             
             # Keywords that suggest FlexCube-specific content (check early)
             question_lower = question.lower()

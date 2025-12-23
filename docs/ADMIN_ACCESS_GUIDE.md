@@ -154,3 +154,6 @@ python -m pytest src/tests/integration/test_admin_endpoints.py -v
 - All admin API endpoints are protected with permission checks
 - General users cannot access admin pages (403 Forbidden)
 
+
+
+

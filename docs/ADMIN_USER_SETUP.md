@@ -130,3 +130,6 @@ If the seed script fails:
 - User management UI: `/admin/users`
 - CRUD operations: `src/database/crud.py`
 
+
+
+
